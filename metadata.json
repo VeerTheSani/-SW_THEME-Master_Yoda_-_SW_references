@@ -1,0 +1,6 @@
+{
+  "name": "Yoda Roast & Translation Hub",
+  "description": "An interactive hub for testing Master Yoda's wit, translating text into Yoda-speak, and engaging in a battle of insights with a customizable Yoda chatbot.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

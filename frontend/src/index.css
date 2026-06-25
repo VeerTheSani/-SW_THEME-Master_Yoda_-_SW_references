@@ -1,0 +1,90 @@
+@import url('https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&family=Dela+Gothic+One&family=Gaegu:wght@400;700&family=Patrick+Hand&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Patrick Hand", "Comic Neue", cursive, sans-serif;
+  --font-mono: "Gaegu", cursive, sans-serif;
+  --font-display: "Dela Gothic One", sans-serif;
+}
+
+body {
+  background-color: #f7f4eb;
+  color: #1e1b18;
+  font-family: var(--font-sans);
+  background-image: 
+    radial-gradient(#e5dec9 1.5px, transparent 1.5px), 
+    radial-gradient(#e5dec9 1.5px, #f7f4eb 1.5px);
+  background-size: 30px 30px;
+  background-position: 0 0, 15px 15px;
+  overflow-x: hidden;
+}
+
+/* Custom scrollbar - sketchy style */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1ebd9;
+  border-left: 2px solid #1e1b18;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c3b99d;
+  border: 2px solid #1e1b18;
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a99e80;
+}
+
+/* Sketch border utilities */
+.sketch-border-1 {
+  border: 3px solid #1e1b18;
+  border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
+}
+
+.sketch-border-2 {
+  border: 3px solid #1e1b18;
+  border-radius: 20px 285px 20px 275px / 240px 25px 250px 25px;
+}
+
+.sketch-border-3 {
+  border: 3.5px solid #1e1b18;
+  border-radius: 12px 12px 12px 12px / 200px 200px 200px 200px;
+}
+
+/* Hand-drawn offset solid shadows */
+.sketch-shadow-sm {
+  box-shadow: 3px 3px 0px 0px #1e1b18;
+}
+
+.sketch-shadow-md {
+  box-shadow: 5px 5px 0px 0px #1e1b18;
+}
+
+.sketch-shadow-lg {
+  box-shadow: 8px 8px 0px 0px #1e1b18;
+}
+
+/* Wobbly button active presses */
+.sketch-btn-press {
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+.sketch-btn-press:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0px 0px 0px 0px #1e1b18;
+}
+
+/* Halftone dots pattern background (classic sketch style) */
+.halftone-dots {
+  background-image: radial-gradient(rgba(30, 27, 24, 0.15) 1.5px, transparent 1.5px);
+  background-size: 8px 8px;
+}
+.dark-halftone-dots {
+  background-image: radial-gradient(rgba(244, 63, 94, 0.2) 1.5px, transparent 1.5px);
+  background-size: 8px 8px;
+}
+

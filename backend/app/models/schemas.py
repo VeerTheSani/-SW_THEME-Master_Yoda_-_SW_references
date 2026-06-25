@@ -1,0 +1,24 @@
+from pydantic import BaseModel
+from typing import List, Optional
+
+class ChatMessage(BaseModel):
+    id: str
+    sender: str
+    text: str
+
+    class Config:
+        extra = 'ignore'
+
+class GenerationRequest(BaseModel):
+    text: str
+    mode: str = "roast"
+    character: str = "yoda"
+    isUnhinged: bool = False
+    customApiKey: Optional[str] = None
+    selectedModel: Optional[str] = "gemini-3.5-flash"
+    history: List[ChatMessage] = []
+    ragebaitLevel: Optional[float] = 0.5
+    responseLength: Optional[str] = "medium"
+    
+    class Config:
+        extra = 'ignore'
