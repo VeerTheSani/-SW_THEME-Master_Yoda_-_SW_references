@@ -19,7 +19,7 @@ import {
 import { ChatSession } from "../types";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDMm--MM0-MSOTLeiFvc5Gtt-KupX3ouqs",
+  apiKey: "insert your own key sucker!",
   authDomain: "bold-tempest-hlll2.firebaseapp.com",
   projectId: "bold-tempest-hlll2",
   storageBucket: "bold-tempest-hlll2.firebasestorage.app",
