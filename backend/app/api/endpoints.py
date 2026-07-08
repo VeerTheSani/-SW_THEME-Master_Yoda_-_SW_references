@@ -4,13 +4,19 @@
 # This file is the "Controller". It receives the raw HTTP request from the internet,
 # decides what to do with it, calls the appropriate services, and returns a JSON response.
 
+import json
 import os
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
 # Import our custom schemas and services from the other files in our app.
 from app.models.schemas import GenerationRequest
+from app.models.roundtable_schemas import RoundtableRequest
 from app.services.prompts import get_system_instruction, generate_offline_response
 from app.services.llm_service import call_gemini
+from app.services.characters import CHARACTERS
+from app.services.orchestrator import run_offline_roundtable, run_roundtable
+from app.services.roundtable_prompts import MODE_SPECS
 
 # Create a "Router". A router is like a mini FastAPI app. We group routes here
 # and attach them to the main app later.
@@ -119,3 +125,55 @@ async def generate_response(req: GenerationRequest):
         
         # If it's a critical, unknown error, raise a 500 Internal Server Error.
         raise HTTPException(status_code=500, detail=f"Disturbance in the Force: {str(e)}")
+
+
+# ==============================================================================
+# THE ROUNDTABLE — multi-character table, streamed as NDJSON events
+# ==============================================================================
+
+ROUNDTABLE_ALLOWED_MODELS = [
+    "gemini-2.5-flash", "gemini-2.5-pro",
+    "gemini-1.5-flash", "gemini-1.5-pro",
+    "gemini-3.5-flash",
+]
+
+
+@router.post("/roundtable/generate")
+async def roundtable_generate(req: RoundtableRequest):
+    # 1. Validate the round setup.
+    if not req.text.strip():
+        raise HTTPException(status_code=400, detail="Empty thoughts, you have. Provide text, you must.")
+    if req.mode not in MODE_SPECS:
+        raise HTTPException(status_code=400, detail=f"Unknown table mode: {req.mode}")
+    seated_ids = [p.characterId for p in req.participants]
+    if len(seated_ids) != 3 or len(set(seated_ids)) != 3:
+        raise HTTPException(status_code=400, detail="Exactly 3 distinct characters must be seated at the table.")
+    unknown = [cid for cid in seated_ids if cid not in CHARACTERS]
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unknown characters: {', '.join(unknown)}")
+
+    # 2. Resolve key + model the same way /yoda/generate does.
+    api_key = req.customApiKey or os.getenv("GEMINI_API_KEY") or ""
+    is_default_key_unconfigured = api_key == "" or api_key == "MY_GEMINI_API_KEY" or "MY_" in api_key
+    model_name = req.selectedModel or "gemini-3.5-flash"
+    if model_name not in ROUNDTABLE_ALLOWED_MODELS:
+        model_name = "gemini-3.5-flash"
+
+    # 3. Pick the pipeline: real orchestration, or the keyless scripted demo.
+    if is_default_key_unconfigured and not req.customApiKey:
+        generator = run_offline_roundtable(req)
+    else:
+        generator = run_roundtable(req, api_key, model_name)
+
+    async def ndjson_stream():
+        try:
+            async for event in generator:
+                yield json.dumps(event, ensure_ascii=False) + "\n"
+        except Exception as e:  # catastrophic — surface it as a protocol event, not a dead socket
+            yield json.dumps({"event": "error", "data": {"message": str(e)[:300], "recoverable": False}}) + "\n"
+
+    return StreamingResponse(
+        ndjson_stream(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

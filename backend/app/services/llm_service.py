@@ -55,7 +55,7 @@ async def call_gemini_json(
     client: genai.Client,
     model_name: str,
     system_instruction: str,
-    contents: list,
+    contents,  # str or list[types.Content] — the SDK accepts both
     response_schema: type[BaseModel],
     temperature: float = 0.9,
 ) -> BaseModel:
