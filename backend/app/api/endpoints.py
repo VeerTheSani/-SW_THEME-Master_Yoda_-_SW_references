@@ -1,21 +1,45 @@
+# ==============================================================================
+# API ENDPOINTS (api/endpoints.py)
+# ==============================================================================
+# This file is the "Controller". It receives the raw HTTP request from the internet,
+# decides what to do with it, calls the appropriate services, and returns a JSON response.
+
 import os
 from fastapi import APIRouter, HTTPException
 
+# Import our custom schemas and services from the other files in our app.
 from app.models.schemas import GenerationRequest
 from app.services.prompts import get_system_instruction, generate_offline_response
 from app.services.llm_service import call_gemini
 
+# Create a "Router". A router is like a mini FastAPI app. We group routes here
+# and attach them to the main app later.
 router = APIRouter()
 
+# The @ symbol is a "Decorator". It tells FastAPI:
+# "Hey, attach the function below to the URL '/yoda/generate' via a POST request."
 @router.post("/yoda/generate")
+# 'async def' means this function is asynchronous (it can pause and wait for things like network calls).
+# 'req: GenerationRequest' means the incoming JSON MUST match our GenerationRequest schema.
 async def generate_response(req: GenerationRequest):
+    
+    # 1. Clean the incoming text
     text_content = req.text.strip()
+    
+    # If the text is empty, stop and return a 400 Bad Request error.
     if not text_content:
         raise HTTPException(status_code=400, detail="Empty thoughts, you have. Provide text, you must.")
 
+    # 2. Figure out the API Key
+    # It tries to use the custom key from the frontend first. 
+    # If none, it looks at the hidden environment variable (os.getenv).
     api_key = req.customApiKey or os.getenv("GEMINI_API_KEY") or ""
+    
+    # Check if the key is empty or just the default placeholder from the .env file.
     is_default_key_unconfigured = api_key == "" or api_key == "MY_GEMINI_API_KEY" or "MY_" in api_key
 
+    # 3. Offline Fallback Check
+    # If we have no API key, skip Google entirely and generate a hardcoded offline reply.
     if is_default_key_unconfigured and not req.customApiKey:
         fallback = generate_offline_response(text_content, req.mode, req.character, req.isUnhinged)
         return {
@@ -24,17 +48,27 @@ async def generate_response(req: GenerationRequest):
             "fallbackReason": "KEY_UNCONFIGURED"
         }
 
+    # 4. Resolve the Model Name
     model_name = req.selectedModel or "gemini-3.5-flash"
     
+    # Map any legacy or typo'd Gemma names to the official API names.
+    if model_name in ["gemma-4-26b-a4b-it"]:
+        model_name = "gemma-4-26b-a4b-it"  ###3what the fuck is this choopped model you fucking fix it trir nohwtw fiopaf
+    elif model_name == "gemma-4-31b":
+        model_name = "gemma-4-31b"
+
+    # A list of models we officially allow.
     allowed_models = [
         "gemini-2.5-flash", "gemini-2.5-pro",
         "gemini-1.5-flash", "gemini-1.5-pro",
-        "gemini-3.5-flash", "gemma-2-27b-it",
-        "gemma-2-9b-it", "gemma-2-2b-it"
+        "gemini-3.5-flash", "gemma-4-26b-a4b-it",
+        "gemma-4-31b"
     ]
+    # If a hacker or bug tries to request a weird model, force it back to default.
     if model_name not in allowed_models:
         model_name = "gemini-3.5-flash"
 
+    # 5. Build the System Instruction (the prompt)
     system_instruction = get_system_instruction(
         character=req.character,
         mode=req.mode,
@@ -43,9 +77,14 @@ async def generate_response(req: GenerationRequest):
         response_length=req.responseLength
     )
 
+    # 6. Try to call Google Gemini!
+    # A try/except block is used for Error Handling. If anything inside the 'try'
+    # block crashes, the program doesn't die. Instead, it jumps to the 'except' block.
     try:
+        # Calculate temperature (chaos level)
         temperature = 0.95 if req.isUnhinged else (req.ragebaitLevel if req.ragebaitLevel is not None else 0.8)
         
+        # Ask our LLM service to do the heavy lifting
         reply = call_gemini(
             api_key=api_key,
             model_name=model_name,
@@ -55,6 +94,8 @@ async def generate_response(req: GenerationRequest):
             text_content=text_content
         )
         
+        # If successful, return the final data back to the React frontend!
+        # FastAPI automatically converts this Python dictionary into a JSON response.
         return {
             "reply": reply,
             "isFallback": False,
@@ -63,9 +104,12 @@ async def generate_response(req: GenerationRequest):
         }
 
     except Exception as e:
+        # If the API call fails (e.g. rate limit, or no internet)...
         err_msg = str(e).lower()
         
+        # Check if the error is just a Quota / Limit issue
         if "quota" in err_msg or "rate limit" in err_msg or "exhausted" in err_msg:
+            # Fall back to offline response gracefully
             fallback = generate_offline_response(text_content, req.mode, req.character, req.isUnhinged)
             return {
                 "reply": fallback,
@@ -73,4 +117,5 @@ async def generate_response(req: GenerationRequest):
                 "fallbackReason": "QUOTA_EXCEEDED"
             }
         
+        # If it's a critical, unknown error, raise a 500 Internal Server Error.
         raise HTTPException(status_code=500, detail=f"Disturbance in the Force: {str(e)}")

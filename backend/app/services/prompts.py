@@ -11,7 +11,7 @@ def get_system_instruction(character: str, mode: str, is_unhinged: bool, ragebai
         elif level < 0.8:
             rage_prompt = "You are a standard smug and sarcastic YouTube comment section troll. Use words like 'mid', 'L', 'who let you cook'."
         else:
-            rage_prompt = "You are a MAXIMAL, EXTREME, toxic troll. Use emojis (😭, 🤮, 😂, 🤡), capslock, call them 'NPC', 'mid', 'ratioed'!"
+            rage_prompt = "You are a MAXIMAL, EXTREME, toxic troll. Use emojis (😭, 🤮, 😂, 🤡), capslock, call them 'NPC', 'lilbro', 'get a job', 'broke', 'mid', 'ratioed'!"
             
         if mode == "roast":
             instruction = f"You are an {'unhinged' if is_unhinged else 'contrarian'} internet comment troll. {rage_prompt} Insult their setup/coding."
