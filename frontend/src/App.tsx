@@ -280,6 +280,28 @@ export default function App() {
     }
   };
 
+  // Firebase's raw error codes are cryptic — translate the common ones into
+  // an instruction the user can actually act on.
+  const friendlyAuthError = (error: any): string => {
+    const code = error?.code || "";
+    if (code === "auth/unauthorized-domain") {
+      return `This domain (${window.location.hostname}) isn't authorized for sign-in. Fix: Firebase Console → Authentication → Settings → Authorized domains → Add "${window.location.hostname}".`;
+    }
+    if (code === "auth/operation-not-allowed") {
+      return "This sign-in provider is disabled. Fix: Firebase Console → Authentication → Sign-in method → enable it.";
+    }
+    if (code === "auth/popup-blocked") {
+      return "The sign-in popup was blocked by the browser — allow popups for this site and try again.";
+    }
+    if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+      return "Sign-in popup was closed before finishing — try again.";
+    }
+    if (code === "auth/api-key-not-valid" || String(error?.message || "").includes("api-key")) {
+      return "The Firebase web API key is invalid — check VITE_FIREBASE_API_KEY in frontend/.env.";
+    }
+    return error?.message || String(error);
+  };
+
   const handleSignInWithGoogle = async () => {
     if (soundModeEnabled) {
       SoundFX.playMinecraftClick(0.35);
@@ -289,7 +311,7 @@ export default function App() {
       console.log("[Auth] Signed in with Google:", result.user.displayName);
     } catch (error: any) {
       console.error("[Auth] Google Sign-In failed:", error);
-      setErrorStatus(`Google Sign-In failed: ${error.message || error}`);
+      setErrorStatus(`Google Sign-In failed: ${friendlyAuthError(error)}`);
     }
   };
 
@@ -302,7 +324,7 @@ export default function App() {
       console.log("[Auth] Signed in with GitHub:", result.user.displayName);
     } catch (error: any) {
       console.error("[Auth] GitHub Sign-In failed:", error);
-      setErrorStatus(`GitHub Sign-In failed: ${error.message || error}`);
+      setErrorStatus(`GitHub Sign-In failed: ${friendlyAuthError(error)}`);
     }
   };
 
