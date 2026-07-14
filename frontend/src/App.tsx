@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Sparkles, Trash2, Heart, RefreshCw, Key, Eye, EyeOff, Bot, Skull, Zap, Flame, Mail, Volume2, VolumeX, AudioLines, LogIn, LogOut, Github, Chrome, Cloud, RefreshCcw } from "lucide-react";
-import { ChatMessage, HubMode, ChatSession } from "./types";
+import { ChatMessage, HubMode, ChatSession, ViewMode, CharacterId, CharacterMemoryGraph, RoundtableSession } from "./types";
 import YodaGlobe from "./components/YodaGlobe";
 import InputArea from "./components/InputArea";
 import ChatHistory from "./components/ChatHistory";
+import { RoundtablePanel } from "./components/roundtable/RoundtablePanel";
+import { CHARACTER_ORDER } from "./lib/characters";
+import { loadGuestMemory, saveGuestMemory } from "./lib/memoryGraph";
 import { SoundFX, CharacterTTS } from "./utils/audio";
 import { 
   auth, 
@@ -16,7 +19,11 @@ import {
   User as FirebaseUser,
   dbSaveSession,
   dbDeleteSession,
-  dbLoadSessions
+  dbLoadSessions,
+  dbSaveCharacterMemory,
+  dbLoadCharacterMemories,
+  dbSaveRoundtableSession,
+  dbLoadRoundtableSessions
 } from "./lib/firebase";
 
 const CONSOLE_LOG_GREETING_ROAST: ChatMessage = {
@@ -158,6 +165,54 @@ export default function App() {
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [gateApiKeyInput, setGateApiKeyInput] = useState<string>("");
   const [showGateApiKey, setShowGateApiKey] = useState<boolean>(false);
+
+  // --- The Roundtable: view toggle + per-character graph memories ---
+  const [viewMode, setViewMode] = useState<ViewMode>("single");
+  const [characterMemories, setCharacterMemories] = useState<Record<CharacterId, CharacterMemoryGraph>>(() => {
+    const initial = {} as Record<CharacterId, CharacterMemoryGraph>;
+    for (const characterId of CHARACTER_ORDER) {
+      initial[characterId] = loadGuestMemory(characterId);
+    }
+    return initial;
+  });
+  const [roundtableSession, setRoundtableSession] = useState<RoundtableSession | null>(() => {
+    try {
+      const raw = localStorage.getItem("roundtable_active_session_v1");
+      return raw ? (JSON.parse(raw) as RoundtableSession) : null;
+    } catch {
+      return null;
+    }
+  });
+  const roundtableSessionRef = useRef<RoundtableSession | null>(null);
+  roundtableSessionRef.current = roundtableSession;
+  // Bumped when a cloud table session replaces the local one, to remount the panel.
+  const [roundtableLoadTick, setRoundtableLoadTick] = useState(0);
+
+  const handleMemoriesChange = (next: Record<CharacterId, CharacterMemoryGraph>) => {
+    setCharacterMemories((previous: Record<CharacterId, CharacterMemoryGraph>) => {
+      for (const characterId of CHARACTER_ORDER) {
+        if (next[characterId] !== previous[characterId]) {
+          saveGuestMemory(next[characterId]);
+          if (user) {
+            dbSaveCharacterMemory(user.uid, next[characterId]);
+          }
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleRoundtableSessionChange = (session: RoundtableSession) => {
+    setRoundtableSession(session);
+    try {
+      localStorage.setItem("roundtable_active_session_v1", JSON.stringify(session));
+    } catch {
+      // storage full/blocked — table minutes stay in-session only
+    }
+    if (user) {
+      dbSaveRoundtableSession(user.uid, session);
+    }
+  };
 
   const handleSignInWithGoogle = async () => {
     if (soundModeEnabled) {
@@ -334,6 +389,39 @@ export default function App() {
           }
         } catch (e) {
           console.error("[Auth] Error fetching cloud sessions:", e);
+        }
+
+        // --- The Roundtable: cloud memories + table session (independent of chat sessions) ---
+        try {
+          const cloudMemories = await dbLoadCharacterMemories(currentUser.uid);
+          setCharacterMemories((previous: Record<CharacterId, CharacterMemoryGraph>) => {
+            const merged = { ...previous };
+            for (const characterId of CHARACTER_ORDER) {
+              const cloudGraph = cloudMemories[characterId];
+              if (cloudGraph) {
+                merged[characterId] = cloudGraph;
+                saveGuestMemory(cloudGraph); // keep local cache in step with the cloud
+              } else if (previous[characterId].version > 0) {
+                // Guest played rounds before signing in — migrate that memory up.
+                dbSaveCharacterMemory(currentUser.uid, previous[characterId]);
+              }
+            }
+            return merged;
+          });
+
+          const cloudTables = await dbLoadRoundtableSessions(currentUser.uid);
+          if (cloudTables.length > 0) {
+            const latest = cloudTables[cloudTables.length - 1];
+            setRoundtableSession(latest);
+            try {
+              localStorage.setItem("roundtable_active_session_v1", JSON.stringify(latest));
+            } catch { /* cache only */ }
+            setRoundtableLoadTick((tick: number) => tick + 1);
+          } else if (roundtableSessionRef.current && roundtableSessionRef.current.entries.length > 0) {
+            dbSaveRoundtableSession(currentUser.uid, roundtableSessionRef.current);
+          }
+        } catch (e) {
+          console.error("[Roundtable] Cloud memory/session load failed:", e);
         }
       } else {
         console.log("[Auth] Guest mode active.");
@@ -941,6 +1029,26 @@ export default function App() {
 
           {/* Cloud Auth / Sync Control Panel */}
           <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
+            {/* The Roundtable view toggle */}
+            <button
+              id="roundtable-toggle-btn"
+              type="button"
+              onClick={() => {
+                if (soundModeEnabled) SoundFX.playMinecraftClick(0.35);
+                setViewMode(viewMode === "roundtable" ? "single" : "roundtable");
+              }}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-mono font-bold border-2 sketch-btn-press transition-all cursor-pointer active:translate-y-0.5 ${
+                viewMode === "roundtable"
+                  ? "border-[#1e1b18] bg-[#1e1b18] text-[#f7f4eb] shadow-[3px_3px_0px_0px_#78716c]"
+                  : isUnhinged
+                    ? "border-rose-600 bg-[#2d1115] text-rose-100 hover:bg-rose-900 shadow-[3px_3px_0px_0px_#e11d48]"
+                    : "border-[#1e1b18] bg-amber-100 text-[#1e1b18] hover:bg-amber-200 shadow-[3px_3px_0px_0px_#1e1b18]"
+              }`}
+              title={viewMode === "roundtable" ? "Back to single chat" : "Open the multi-character Roundtable"}
+            >
+              🪑 {viewMode === "roundtable" ? "Leave the Table" : "The Roundtable"}
+            </button>
+
             {/* Quick reset status (looks like an adhesive postage stamp) */}
             <button
               id="power-cycle-btn"
@@ -1680,6 +1788,17 @@ export default function App() {
                 🔒 Protected by Firebase Authentication & Firestore Security Rules
               </div>
             </div>
+          ) : viewMode === "roundtable" ? (
+            <React.Fragment key={`table-${roundtableLoadTick}`}>
+              <RoundtablePanel
+                customApiKey={customApiKey}
+                selectedModel={selectedModel}
+                memories={characterMemories}
+                onMemoriesChange={handleMemoriesChange}
+                initialSession={roundtableSession}
+                onSessionChange={handleRoundtableSessionChange}
+              />
+            </React.Fragment>
           ) : (
             <>
               {/* MIDDLE COLUMN: Yoda Cartoon Panel & Input (4 Cols) */}

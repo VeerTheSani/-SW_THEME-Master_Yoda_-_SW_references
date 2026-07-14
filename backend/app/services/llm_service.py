@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 from google import genai
@@ -70,11 +71,20 @@ async def call_gemini_json(
 
     last_error: Exception | None = None
     for _attempt in range(2):  # one repair-retry on malformed output
-        response = await client.aio.models.generate_content(
-            model=model_name,
-            contents=contents,
-            config=config,
-        )
+        try:
+            response = await client.aio.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=config,
+            )
+        except Exception as e:
+            # Free-tier keys burst-limit easily (RPM); one patient retry keeps
+            # the round live instead of dropping to canned fallback lines.
+            message = str(e).lower()
+            if _attempt == 0 and ("429" in message or "resource_exhausted" in message or "quota" in message or "rate limit" in message):
+                await asyncio.sleep(20)
+                continue
+            raise
         parsed = getattr(response, "parsed", None)
         if isinstance(parsed, response_schema):
             return parsed
