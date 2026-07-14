@@ -6,7 +6,9 @@ import YodaGlobe from "./components/YodaGlobe";
 import InputArea from "./components/InputArea";
 import ChatHistory from "./components/ChatHistory";
 import { RoundtablePanel } from "./components/roundtable/RoundtablePanel";
+import { ConfigMenu, PROVIDER_CONFIG_KEY, ProviderConfig, defaultProviderConfig } from "./components/ConfigMenu";
 import { CHARACTER_ORDER } from "./lib/characters";
+import { GOOGLE_MODEL_OPTIONS } from "./lib/googleModels";
 import { loadGuestMemory, saveGuestMemory } from "./lib/memoryGraph";
 import { SoundFX, CharacterTTS } from "./utils/audio";
 import { 
@@ -167,27 +169,67 @@ export default function App() {
   const [showGateApiKey, setShowGateApiKey] = useState<boolean>(false);
 
   // Bring-your-own-provider: point every Gemini call at any OpenAI-compatible
-  // endpoint instead (OpenRouter, a local gateway, etc). Empty = use Gemini directly.
+  // endpoint instead (OpenRouter, a local gateway, etc). All provider settings
+  // live in the Configuration menu and only take effect on "Save & apply".
+  const [providerConfig, setProviderConfig] = useState<ProviderConfig>(() => {
+    try {
+      const raw = localStorage.getItem(PROVIDER_CONFIG_KEY);
+      if (raw) return { ...defaultProviderConfig(), ...JSON.parse(raw) };
+    } catch { /* corrupted — rebuild below */ }
+    // Migrate the legacy flat keys into the config shape.
+    const legacyKey = localStorage.getItem("jedi_custom_api_key") || "";
+    const legacyUrl = localStorage.getItem("jedi_provider_base_url") || "";
+    const migrated = defaultProviderConfig();
+    if (legacyUrl) {
+      migrated.source = "custom";
+      migrated.relayUrl = legacyUrl;
+      migrated.relayKey = legacyKey;
+    } else {
+      migrated.googleKey = legacyKey;
+    }
+    return migrated;
+  });
+  const [showConfigMenu, setShowConfigMenu] = useState<boolean>(false);
   const [providerBaseUrl, setProviderBaseUrl] = useState<string>(() => {
     return localStorage.getItem("jedi_provider_base_url") || "";
   });
-  const handleProviderBaseUrlChange = (value: string) => {
-    setProviderBaseUrl(value);
-    localStorage.setItem("jedi_provider_base_url", value);
-  };
-  // Explicit ON/OFF toggle — driving the UI off "is providerBaseUrl non-empty"
-  // let an unfilled placeholder look like an active value. Starts ON only if a
-  // provider was already saved from a previous session.
   const [customProviderMode, setCustomProviderMode] = useState<boolean>(() => {
     return !!localStorage.getItem("jedi_provider_base_url");
   });
-  const handleToggleCustomProviderMode = () => {
-    if (customProviderMode) {
-      // Switching back to Google: actually clear the saved URL so state can't
-      // silently disagree with what's on screen.
-      handleProviderBaseUrlChange("");
-    }
-    setCustomProviderMode((prev) => !prev);
+
+  const persistProviderConfig = (config: ProviderConfig) => {
+    try {
+      localStorage.setItem(PROVIDER_CONFIG_KEY, JSON.stringify(config));
+    } catch { /* storage blocked — session only */ }
+  };
+
+  // Called by the Configuration menu's "Save & apply" — the ONLY place the
+  // active source/key/model actually change.
+  const handleApplyProviderConfig = (config: ProviderConfig) => {
+    setProviderConfig(config);
+    persistProviderConfig(config);
+    const isCustom = config.source === "custom";
+    setCustomProviderMode(isCustom);
+    const appliedUrl = isCustom ? config.relayUrl.trim() : "";
+    setProviderBaseUrl(appliedUrl);
+    localStorage.setItem("jedi_provider_base_url", appliedUrl);
+    const appliedKey = isCustom ? config.relayKey : config.googleKey;
+    setCustomApiKey(appliedKey);
+    localStorage.setItem("jedi_custom_api_key", appliedKey);
+    const appliedModel = isCustom ? config.relayModel.trim() : config.googleModel;
+    setSelectedModel(appliedModel);
+    syncActiveStateToSessionsList({ selectedModel: appliedModel });
+  };
+
+  // Quick model change from the cabinet dropdown — kept in step with the config.
+  const handleQuickModelChange = (value: string) => {
+    setSelectedModel(value);
+    syncActiveStateToSessionsList({ selectedModel: value });
+    setProviderConfig((prev: ProviderConfig) => {
+      const next = customProviderMode ? { ...prev, relayModel: value } : { ...prev, googleModel: value };
+      persistProviderConfig(next);
+      return next;
+    });
   };
 
   // --- The Roundtable: view toggle + per-character graph memories ---
