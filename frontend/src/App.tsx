@@ -1243,8 +1243,8 @@ export default function App() {
                 <label className={`text-xs font-mono font-bold uppercase tracking-wide ${isUnhinged ? "text-rose-400" : "text-stone-600"}`}>
                   2. Select Sketch Model
                 </label>
-                <span className="text-[10px] font-mono font-bold text-stone-400 uppercase">
-                  {customProviderMode ? "Custom Provider" : "Google Models"}
+                <span className={`text-[10px] font-mono font-bold uppercase ${customProviderMode ? "text-amber-700" : "text-stone-400"}`}>
+                  {customProviderMode ? "📡 Smuggler's uplink" : "Google Models"}
                 </span>
               </div>
               {customProviderMode ? (
