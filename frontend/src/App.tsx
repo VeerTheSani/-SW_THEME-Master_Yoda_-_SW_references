@@ -175,6 +175,20 @@ export default function App() {
     setProviderBaseUrl(value);
     localStorage.setItem("jedi_provider_base_url", value);
   };
+  // Explicit ON/OFF toggle — driving the UI off "is providerBaseUrl non-empty"
+  // let an unfilled placeholder look like an active value. Starts ON only if a
+  // provider was already saved from a previous session.
+  const [customProviderMode, setCustomProviderMode] = useState<boolean>(() => {
+    return !!localStorage.getItem("jedi_provider_base_url");
+  });
+  const handleToggleCustomProviderMode = () => {
+    if (customProviderMode) {
+      // Switching back to Google: actually clear the saved URL so state can't
+      // silently disagree with what's on screen.
+      handleProviderBaseUrlChange("");
+    }
+    setCustomProviderMode((prev) => !prev);
+  };
 
   // --- The Roundtable: view toggle + per-character graph memories ---
   const [viewMode, setViewMode] = useState<ViewMode>("single");
@@ -1223,35 +1237,50 @@ export default function App() {
               </div>
             </div>
 
-            {/* Model Selection (Sketch Dropdown) */}
+            {/* Model Selection (Sketch Dropdown, or free text when a custom provider is set) */}
             <div className="md:col-span-4 space-y-2">
               <div className="flex justify-between items-center">
                 <label className={`text-xs font-mono font-bold uppercase tracking-wide ${isUnhinged ? "text-rose-400" : "text-stone-600"}`}>
                   2. Select Sketch Model
                 </label>
-                <span className="text-[10px] font-mono font-bold text-stone-400 uppercase">Google Models</span>
+                <span className="text-[10px] font-mono font-bold text-stone-400 uppercase">
+                  {customProviderMode ? "Custom Provider" : "Google Models"}
+                </span>
               </div>
-              <select
-                value={selectedModel}
-                onChange={(e) => {
-                  setSelectedModel(e.target.value);
-                  syncActiveStateToSessionsList({ selectedModel: e.target.value });
-                  if (soundModeEnabled) {
-                    SoundFX.playMinecraftClick(0.35);
-                  }
-                }}
-                className={`w-full ${isUnhinged ? "bg-[#181011] text-rose-100 border-rose-600 focus:ring-[#f43f5e] shadow-[2px_2px_0px_0px_#ef4444]" : "bg-white border-[#1e1b18] text-[#1e1b18] focus:ring-[#10b981] shadow-[2px_2px_0px_0px_#1e1b18]"} border-2 rounded-lg py-2.5 px-3 text-xs font-mono outline-none transition-all cursor-pointer font-bold`}
-              >
-                <option value="gemini-2.5-flash">Gemini 2.5 Flash (Default)</option>
-                <option value="gemini-2.5-pro">Gemini 2.5 Pro (Deep Brain)</option>
-                <option value="gemini-3.5-flash">Gemini 3.5 Flash (Fastest)</option>
-                <option value="gemini-1.5-flash">Gemini 1.5 Flash (Classic)</option>
-                <option value="gemini-1.5-pro">Gemini 1.5 Pro (Classic Pro)</option>
-                <option value="gemma-4-26b-a4b-it">Gemma 4 26B (gemma-4-26b-a4b-it)</option>
-                <option value="gemma-4-26b">Gemma 4 26B (Gemma 2 27B)</option>
-                <option value="gemma-4-31b">Gemma 4 31B (Gemma 2 9B)</option>
-                <option value="gemma-2-2b-it">Gemma 2 2B Instruct</option>
-              </select>
+              {customProviderMode ? (
+                <input
+                  type="text"
+                  value={selectedModel}
+                  onChange={(e) => {
+                    setSelectedModel(e.target.value);
+                    syncActiveStateToSessionsList({ selectedModel: e.target.value });
+                  }}
+                  placeholder="Type the model id, e.g. google/gemini-2.5-flash"
+                  className={`w-full ${isUnhinged ? "bg-[#181011] text-rose-100 border-rose-600 focus:ring-[#f43f5e] shadow-[2px_2px_0px_0px_#ef4444]" : "bg-white border-[#1e1b18] text-[#1e1b18] focus:ring-[#10b981] shadow-[2px_2px_0px_0px_#1e1b18]"} border-2 rounded-lg py-2.5 px-3 text-xs font-mono outline-none placeholder:text-stone-400 transition-all font-bold`}
+                />
+              ) : (
+                <select
+                  value={selectedModel}
+                  onChange={(e) => {
+                    setSelectedModel(e.target.value);
+                    syncActiveStateToSessionsList({ selectedModel: e.target.value });
+                    if (soundModeEnabled) {
+                      SoundFX.playMinecraftClick(0.35);
+                    }
+                  }}
+                  className={`w-full ${isUnhinged ? "bg-[#181011] text-rose-100 border-rose-600 focus:ring-[#f43f5e] shadow-[2px_2px_0px_0px_#ef4444]" : "bg-white border-[#1e1b18] text-[#1e1b18] focus:ring-[#10b981] shadow-[2px_2px_0px_0px_#1e1b18]"} border-2 rounded-lg py-2.5 px-3 text-xs font-mono outline-none transition-all cursor-pointer font-bold`}
+                >
+                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (Default)</option>
+                  <option value="gemini-2.5-pro">Gemini 2.5 Pro (Deep Brain)</option>
+                  <option value="gemini-3.5-flash">Gemini 3.5 Flash (Fastest)</option>
+                  <option value="gemini-1.5-flash">Gemini 1.5 Flash (Classic)</option>
+                  <option value="gemini-1.5-pro">Gemini 1.5 Pro (Classic Pro)</option>
+                  <option value="gemma-4-26b-a4b-it">Gemma 4 26B (gemma-4-26b-a4b-it)</option>
+                  <option value="gemma-4-26b">Gemma 4 26B (Gemma 2 27B)</option>
+                  <option value="gemma-4-31b">Gemma 4 31B (Gemma 2 9B)</option>
+                  <option value="gemma-2-2b-it">Gemma 2 2B Instruct</option>
+                </select>
+              )}
             </div>
 
             {/* Unhinged (Scribble Mode) */}
@@ -1453,57 +1482,100 @@ export default function App() {
             </div>
           )}
 
-          {/* Row 2: API Keys Management */}
-          <div className={`mt-5 pt-4 border-t-2 ${isUnhinged ? "border-rose-950/40" : "border-stone-900/10"} flex flex-col md:flex-row md:items-center justify-between gap-4`}>
-            <div className="flex-1 max-w-lg space-y-1">
+          {/* Row 2: API Provider — one explicit toggle, no ambiguous shared fields */}
+          <div className={`mt-5 pt-4 border-t-2 ${isUnhinged ? "border-rose-950/40" : "border-stone-900/10"}`}>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
               <div className={`flex items-center gap-1.5 ${isUnhinged ? "text-rose-300" : "text-stone-800"}`}>
                 <Key className="w-4 h-4 text-stone-600" />
-                <span className="text-xs font-mono font-bold">Custom Google AI Studio Key (Optional)</span>
+                <span className="text-xs font-mono font-bold">API Provider</span>
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border-2 font-bold ${
+                  customProviderMode
+                    ? "border-amber-600 bg-amber-100 text-amber-800"
+                    : "border-emerald-600 bg-emerald-100 text-emerald-800"
+                }`}>
+                  {customProviderMode ? "● CUSTOM PROVIDER ACTIVE" : "● GOOGLE AI STUDIO (DIRECT)"}
+                </span>
               </div>
-              <p className={`text-[10px] ${isUnhinged ? "text-rose-400" : "text-stone-500"} leading-relaxed font-sans font-medium`}>
-                Save your own custom Google key privately inside your browser storage for unlimited hand-drawn transmissions! Key remains server-secured.
-              </p>
-            </div>
-
-            <div className="relative w-full md:w-80">
-              <input
-                type={showApiKey ? "text" : "password"}
-                value={customApiKey}
-                onChange={(e) => handleApiKeyChange(e.target.value)}
-                placeholder="Starts with AIzaSy..."
-                className={`w-full ${isUnhinged ? "bg-[#181011] text-rose-100 border-rose-600 focus:ring-[#f43f5e] shadow-[2px_2px_0px_0px_#ef4444]" : "bg-white border-[#1e1b18] text-[#1e1b18] focus:ring-[#10b981] shadow-[2px_2px_0px_0px_#1e1b18]"} border-2 text-xs font-mono rounded-lg pl-3 pr-9 py-2 outline-none placeholder:text-stone-400 transition-all font-bold`}
-              />
               <button
                 type="button"
-                onClick={() => setShowApiKey(!showApiKey)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-stone-500 hover:text-stone-800 transition-colors cursor-pointer border-0 bg-transparent"
-                title={showApiKey ? "Hide Key" : "Show Key"}
+                onClick={handleToggleCustomProviderMode}
+                className={`self-start md:self-auto px-3 py-1.5 rounded-lg text-xs font-mono font-bold border-2 sketch-btn-press transition-all cursor-pointer ${isUnhinged ? "border-rose-600" : "border-[#1e1b18]"} ${
+                  customProviderMode
+                    ? (isUnhinged ? "bg-[#181011] text-rose-300" : "bg-white text-stone-600")
+                    : (isUnhinged ? "bg-rose-600 text-white shadow-[2px_2px_0px_0px_#ef4444]" : "bg-[#1e1b18] text-white shadow-[2px_2px_0px_0px_#1e1b18]")
+                }`}
               >
-                {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                {customProviderMode ? "Switch back to Google AI Studio" : "Use a custom provider instead (OpenRouter, etc.)"}
               </button>
             </div>
-          </div>
 
-          {/* Row 3: Bring-your-own-provider (OpenRouter, or any OpenAI-compatible endpoint) */}
-          <div className={`mt-4 pt-4 border-t-2 ${isUnhinged ? "border-rose-950/40" : "border-stone-900/10"} flex flex-col md:flex-row md:items-center justify-between gap-4`}>
-            <div className="flex-1 max-w-lg space-y-1">
-              <div className={`flex items-center gap-1.5 ${isUnhinged ? "text-rose-300" : "text-stone-800"}`}>
-                <Key className="w-4 h-4 text-stone-600" />
-                <span className="text-xs font-mono font-bold">Custom Provider Base URL (Optional)</span>
+            {!customProviderMode ? (
+              // Google AI Studio mode — the original key field, unchanged.
+              <div className="mt-3 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex-1 max-w-lg space-y-1">
+                  <span className="text-xs font-mono font-bold">Custom Google AI Studio Key (Optional)</span>
+                  <p className={`text-[10px] ${isUnhinged ? "text-rose-400" : "text-stone-500"} leading-relaxed font-sans font-medium`}>
+                    Save your own custom Google key privately inside your browser storage for unlimited hand-drawn transmissions! Key remains server-secured.
+                  </p>
+                </div>
+                <div className="relative w-full md:w-80">
+                  <input
+                    type={showApiKey ? "text" : "password"}
+                    value={customApiKey}
+                    onChange={(e) => handleApiKeyChange(e.target.value)}
+                    placeholder="Starts with AIzaSy..."
+                    className={`w-full ${isUnhinged ? "bg-[#181011] text-rose-100 border-rose-600 focus:ring-[#f43f5e] shadow-[2px_2px_0px_0px_#ef4444]" : "bg-white border-[#1e1b18] text-[#1e1b18] focus:ring-[#10b981] shadow-[2px_2px_0px_0px_#1e1b18]"} border-2 text-xs font-mono rounded-lg pl-3 pr-9 py-2 outline-none placeholder:text-stone-400 transition-all font-bold`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-stone-500 hover:text-stone-800 transition-colors cursor-pointer border-0 bg-transparent"
+                    title={showApiKey ? "Hide Key" : "Show Key"}
+                  >
+                    {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
               </div>
-              <p className={`text-[10px] ${isUnhinged ? "text-rose-400" : "text-stone-500"} leading-relaxed font-sans font-medium`}>
-                Route every call through your own OpenAI-compatible endpoint instead — e.g. OpenRouter's <code>https://openrouter.ai/api/v1</code>. The key above becomes that provider's key, and the model field below becomes free text (e.g. <code>google/gemini-2.5-flash</code>).
-              </p>
-            </div>
-            <div className="w-full md:w-80">
-              <input
-                type="text"
-                value={providerBaseUrl}
-                onChange={(e) => handleProviderBaseUrlChange(e.target.value)}
-                placeholder="https://openrouter.ai/api/v1"
-                className={`w-full ${isUnhinged ? "bg-[#181011] text-rose-100 border-rose-600 focus:ring-[#f43f5e] shadow-[2px_2px_0px_0px_#ef4444]" : "bg-white border-[#1e1b18] text-[#1e1b18] focus:ring-[#10b981] shadow-[2px_2px_0px_0px_#1e1b18]"} border-2 text-xs font-mono rounded-lg px-3 py-2 outline-none placeholder:text-stone-400 transition-all font-bold`}
-              />
-            </div>
+            ) : (
+              // Custom provider mode — all three fields grouped in one obvious card.
+              <div className={`mt-3 p-4 rounded-xl border-2 border-dashed space-y-3 ${isUnhinged ? "border-rose-600 bg-[#180a0c]" : "border-amber-600 bg-amber-50"}`}>
+                <p className={`text-[10px] ${isUnhinged ? "text-rose-400" : "text-stone-600"} leading-relaxed font-sans font-medium`}>
+                  Every request (single chat and The Roundtable) now goes to <strong>your</strong> endpoint instead of Google. Fill in all three fields — the model dropdown above has already switched to free text.
+                </p>
+                <div>
+                  <label className="text-[10px] font-mono font-bold uppercase tracking-wide text-stone-600">1. Base URL (required)</label>
+                  <input
+                    type="text"
+                    value={providerBaseUrl}
+                    onChange={(e) => handleProviderBaseUrlChange(e.target.value)}
+                    placeholder="Type it — e.g. https://openrouter.ai/api/v1"
+                    className={`mt-1 w-full ${isUnhinged ? "bg-[#181011] text-rose-100 border-rose-600 focus:ring-[#f43f5e]" : "bg-white border-[#1e1b18] text-[#1e1b18] focus:ring-amber-500"} border-2 text-xs font-mono rounded-lg px-3 py-2 outline-none placeholder:italic placeholder:text-stone-400 transition-all font-bold`}
+                  />
+                  {!providerBaseUrl && (
+                    <p className="mt-1 text-[10px] font-mono text-amber-700">↑ Empty — still using Google until you type a real URL here.</p>
+                  )}
+                </div>
+                <div className="relative">
+                  <label className="text-[10px] font-mono font-bold uppercase tracking-wide text-stone-600">2. Provider API Key</label>
+                  <input
+                    type={showApiKey ? "text" : "password"}
+                    value={customApiKey}
+                    onChange={(e) => handleApiKeyChange(e.target.value)}
+                    placeholder="Type it — e.g. sk-or-v1-..."
+                    className={`mt-1 w-full ${isUnhinged ? "bg-[#181011] text-rose-100 border-rose-600 focus:ring-[#f43f5e]" : "bg-white border-[#1e1b18] text-[#1e1b18] focus:ring-amber-500"} border-2 text-xs font-mono rounded-lg pl-3 pr-9 py-2 outline-none placeholder:italic placeholder:text-stone-400 transition-all font-bold`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                    className="absolute right-2.5 top-[26px] p-0.5 text-stone-500 hover:text-stone-800 transition-colors cursor-pointer border-0 bg-transparent"
+                    title={showApiKey ? "Hide Key" : "Show Key"}
+                  >
+                    {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                <p className="text-[10px] font-mono text-stone-500">3. Model id is set in "2. Select Sketch Model" above (now a text box, not a dropdown).</p>
+              </div>
+            )}
           </div>
         </section>
 
