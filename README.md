@@ -176,3 +176,6 @@ Exactly 3 distinct, known character IDs must be seated; `maxTurns` is clamped se
 - Gemini free-tier keys are rate-limited project-wide; the backend retries once after a 20s backoff on burst-limit errors, then degrades to offline lines.
 - Model allowlists (`endpoints.py`) hard-reject unknown model names when using Gemini directly — irrelevant once a custom `providerBaseUrl` is set, since provider catalogs are arbitrary.
 - The frontend has no `@types/react` package installed; custom components can't take a `key` prop directly — wrap repeated elements in a keyed `<Fragment>` instead.
+
+
+Thats all, have great day and thanks for reading
