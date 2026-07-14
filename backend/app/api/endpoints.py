@@ -15,7 +15,12 @@ from app.models.roundtable_schemas import RoundtableRequest
 from app.services.prompts import get_system_instruction, generate_offline_response
 from app.services.llm_service import call_gemini
 from app.services.characters import CHARACTERS
-from app.services.orchestrator import run_offline_roundtable, run_roundtable
+from app.services.orchestrator import (
+    run_direct_reply,
+    run_offline_direct_reply,
+    run_offline_roundtable,
+    run_roundtable,
+)
 from app.services.roundtable_prompts import MODE_SPECS
 
 # Create a "Router". A router is like a mini FastAPI app. We group routes here
@@ -150,6 +155,8 @@ async def roundtable_generate(req: RoundtableRequest):
     unknown = [cid for cid in seated_ids if cid not in CHARACTERS]
     if unknown:
         raise HTTPException(status_code=400, detail=f"Unknown characters: {', '.join(unknown)}")
+    if req.targetCharacterId and req.targetCharacterId not in seated_ids:
+        raise HTTPException(status_code=400, detail=f"@{req.targetCharacterId} is not seated at this table.")
 
     # 2. Resolve key + model the same way /yoda/generate does.
     api_key = req.customApiKey or os.getenv("GEMINI_API_KEY") or ""
@@ -158,8 +165,11 @@ async def roundtable_generate(req: RoundtableRequest):
     if model_name not in ROUNDTABLE_ALLOWED_MODELS:
         model_name = "gemini-3.5-flash"
 
-    # 3. Pick the pipeline: real orchestration, or the keyless scripted demo.
-    if is_default_key_unconfigured and not req.customApiKey:
+    # 3. Pick the pipeline: a direct @name reply, a full router-led round, or the keyless scripted demo.
+    is_offline = is_default_key_unconfigured and not req.customApiKey
+    if req.targetCharacterId:
+        generator = run_offline_direct_reply(req) if is_offline else run_direct_reply(req, api_key, model_name)
+    elif is_offline:
         generator = run_offline_roundtable(req)
     else:
         generator = run_roundtable(req, api_key, model_name)

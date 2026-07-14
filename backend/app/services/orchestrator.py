@@ -140,6 +140,47 @@ def _naive_synthesis(mode: str, seated: List[CharacterSpec], stance_scores: Dict
     }
 
 
+async def run_direct_reply(req: RoundtableRequest, api_key: str, model_name: str) -> AsyncIterator[dict]:
+    """@name targeting: exactly one character replies, no router, no synthesis, no loop."""
+    seated = [get_character(p.characterId) for p in req.participants]
+    memories = {p.characterId: p.memory for p in req.participants}
+    seated_ids = [s.id for s in seated]
+    speaker = get_character(req.targetCharacterId)
+    transcript = _transcript_from_request(req)
+
+    client = genai.Client(api_key=api_key)
+
+    yield {"event": "round_start", "data": {"mode": req.mode, "participants": seated_ids, "maxTurns": 1}}
+    directive = "The user addressed you directly by name. Reply only to them — do not summon the rest of the table."
+    yield {"event": "turn_start", "data": {"speaker": speaker.id, "turnIndex": 0, "directive": directive}}
+
+    nodes, edges = recall_subgraph(memories[speaker.id], req.text, seated_ids)
+    yield {"event": "memory_recall", "data": {
+        "speaker": speaker.id, "turnIndex": 0,
+        "nodeIds": [n.id for n in nodes], "nodeLabels": [n.label for n in nodes],
+    }}
+
+    try:
+        memory_render = render_graph_for_prompt(nodes, edges, speaker.id)
+        system, user = build_character_turn_prompt(
+            speaker, req.mode, directive, memory_render, transcript, req.responseLength or "medium", seated)
+        turn = await call_gemini_json(client, model_name, system, user, CharacterTurnOutput, speaker.temperature)
+        delta = sanitize_delta(turn.memory_delta)
+        yield {"event": "turn_complete", "data": {
+            "speaker": speaker.id, "turnIndex": 0,
+            "innerThought": turn.inner_thought, "publicReply": turn.public_reply,
+            "stanceScore": turn.stance_score, "memoryDelta": delta.model_dump(), "isFallback": False,
+        }}
+    except Exception as e:
+        lines = speaker.offline_lines.get(req.mode) or ["..."]
+        yield {"event": "turn_error", "data": {
+            "speaker": speaker.id, "turnIndex": 0,
+            "message": str(e)[:300], "fallbackReply": lines[0], "isFallback": True,
+        }}
+
+    yield {"event": "round_end", "data": {"turnsTaken": 1}}
+
+
 async def run_roundtable(req: RoundtableRequest, api_key: str, model_name: str) -> AsyncIterator[dict]:
     seated = [get_character(p.characterId) for p in req.participants]
     memories = {p.characterId: p.memory for p in req.participants}
@@ -226,6 +267,24 @@ async def run_roundtable(req: RoundtableRequest, api_key: str, model_name: str) 
 
     yield {"event": "round_synthesis", "data": synthesis_data}
     yield {"event": "round_end", "data": {"turnsTaken": turns_taken}}
+
+
+async def run_offline_direct_reply(req: RoundtableRequest) -> AsyncIterator[dict]:
+    """Keyless @name targeting: one canned reply from the named character, through the same events."""
+    seated_ids = [p.characterId for p in req.participants]
+    speaker = get_character(req.targetCharacterId)
+
+    yield {"event": "round_start", "data": {"mode": req.mode, "participants": seated_ids, "maxTurns": 1}}
+    yield {"event": "turn_start", "data": {"speaker": speaker.id, "turnIndex": 0, "directive": "Offline demo — direct reply."}}
+    yield {"event": "memory_recall", "data": {"speaker": speaker.id, "turnIndex": 0, "nodeIds": [], "nodeLabels": []}}
+    await asyncio.sleep(0.3)
+    lines = speaker.offline_lines.get(req.mode) or ["..."]
+    yield {"event": "turn_complete", "data": {
+        "speaker": speaker.id, "turnIndex": 0,
+        "innerThought": speaker.offline_thought, "publicReply": lines[0],
+        "stanceScore": None, "memoryDelta": MemoryDelta().model_dump(), "isFallback": True,
+    }}
+    yield {"event": "round_end", "data": {"turnsTaken": 1}}
 
 
 async def run_offline_roundtable(req: RoundtableRequest) -> AsyncIterator[dict]:

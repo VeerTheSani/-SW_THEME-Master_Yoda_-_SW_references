@@ -25,7 +25,7 @@ import { MemoryGraphInspector } from "./MemoryGraphInspector";
 import { RosterPicker } from "./RosterPicker";
 import { RoundtableTranscript, type LiveStatus } from "./RoundtableTranscript";
 
-const DEFAULT_SEATS: CharacterId[] = ["yoda", "anna", "palpaccio"];
+const DEFAULT_SEATS: CharacterId[] = ["yoda", "ragebaiter", "anna"];
 const MAX_TURNS = 6;
 
 const MODE_CHIPS: Record<RoundtableMode, Array<{ label: string; text: string }>> = {

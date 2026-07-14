@@ -167,6 +167,7 @@ class RoundtableRequest(BaseModel):
     selectedModel: Optional[str] = "gemini-3.5-flash"
     responseLength: Optional[str] = "medium"
     maxTurns: int = 8  # server clamps 3..10
+    targetCharacterId: Optional[str] = None  # set via @name — bypasses the router for one direct reply
 
     class Config:
         extra = "ignore"
