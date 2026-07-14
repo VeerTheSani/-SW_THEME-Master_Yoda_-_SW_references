@@ -6,6 +6,7 @@
 
 import json
 import os
+import re
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
@@ -66,25 +67,14 @@ async def generate_response(req: GenerationRequest):
 
     if provider_base_url:
         # A custom provider's model catalog is arbitrary (e.g. "google/gemini-2.5-flash"
-        # on OpenRouter) — the Gemini-specific allowlist below doesn't apply.
+        # on OpenRouter) — the Gemini-specific validation below doesn't apply.
         pass
     else:
-        # Map any legacy or typo'd Gemma names to the official API names.
-        if model_name in ["gemma-4-26b-a4b-it"]:
-            model_name = "gemma-4-26b-a4b-it"  ###3what the fuck is this choopped model you fucking fix it trir nohwtw fiopaf
-        elif model_name == "gemma-4-31b":
-            model_name = "gemma-4-31b"
-
-        # A list of models we officially allow.
-        allowed_models = [
-            "gemini-2.5-flash", "gemini-2.5-pro",
-            "gemini-1.5-flash", "gemini-1.5-pro",
-            "gemini-3.5-flash", "gemini-3.1-flash-lite",
-            "gemma-4-26b-a4b-it", "gemma-4-31b"
-        ]
-        # If a hacker or bug tries to request a weird model, force it back to default.
-        if model_name not in allowed_models:
-            model_name = "gemini-3.5-flash"
+        # Any real Gemini/Gemma id is allowed (new models ship constantly — a
+        # hardcoded list rots, e.g. the retired 1.5 line). Junk input is forced
+        # back to a safe default; a bad-but-plausible id just 404s harmlessly.
+        if not is_plausible_google_model(model_name):
+            model_name = "gemini-2.5-flash"
 
     # 5. Build the System Instruction (the prompt)
     system_instruction = get_system_instruction(
@@ -155,10 +145,11 @@ async def generate_response(req: GenerationRequest):
 # THE ROUNDTABLE — multi-character table, streamed as NDJSON events
 # ==============================================================================
 
-ROUNDTABLE_ALLOWED_MODELS = [
-    "gemini-2.5-flash", "gemini-2.5-pro",
-    "gemini-3.5-flash", "gemini-3.1-flash-lite",
-]
+def is_plausible_google_model(model_name: str) -> bool:
+    """Any real Gemini/Gemma id passes — hardcoded lists rot as models ship
+    and retire. This only rejects junk/injection-shaped input; a plausible but
+    nonexistent id simply gets a 404 from Google and falls back gracefully."""
+    return bool(re.fullmatch(r"(gemini|gemma)-[a-z0-9.\-]{1,60}", model_name or ""))
 
 
 @router.post("/roundtable/generate")
@@ -182,8 +173,8 @@ async def roundtable_generate(req: RoundtableRequest):
     provider_base_url = (req.providerBaseUrl or "").strip() or None
     is_default_key_unconfigured = not provider_base_url and (api_key == "" or api_key == "MY_GEMINI_API_KEY" or "MY_" in api_key)
     model_name = req.selectedModel or "gemini-3.5-flash"
-    if not provider_base_url and model_name not in ROUNDTABLE_ALLOWED_MODELS:
-        model_name = "gemini-3.5-flash"
+    if not provider_base_url and not is_plausible_google_model(model_name):
+        model_name = "gemini-2.5-flash"
 
     # 3. Pick the pipeline: a direct @name reply, an admin-planned exchange, or the keyless scripted demo.
     is_offline = is_default_key_unconfigured and not req.customApiKey
