@@ -15,6 +15,7 @@ class GenerationRequest(BaseModel):
     character: str = "yoda"
     isUnhinged: bool = False
     customApiKey: Optional[str] = None
+    providerBaseUrl: Optional[str] = None  # BYO OpenAI-compatible endpoint (OpenRouter, etc.)
     selectedModel: Optional[str] = "gemini-3.5-flash"
     history: List[ChatMessage] = []
     ragebaitLevel: Optional[float] = 0.5

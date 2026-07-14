@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 from app.models.schemas import GenerationRequest
 from app.models.roundtable_schemas import RoundtableRequest
 from app.services.prompts import get_system_instruction, generate_offline_response
-from app.services.llm_service import call_gemini
+from app.services.llm_service import call_gemini, call_openai_compatible
 from app.services.characters import CHARACTERS
 from app.services.orchestrator import (
     run_direct_reply,
@@ -42,15 +42,17 @@ async def generate_response(req: GenerationRequest):
         raise HTTPException(status_code=400, detail="Empty thoughts, you have. Provide text, you must.")
 
     # 2. Figure out the API Key
-    # It tries to use the custom key from the frontend first. 
+    # It tries to use the custom key from the frontend first.
     # If none, it looks at the hidden environment variable (os.getenv).
     api_key = req.customApiKey or os.getenv("GEMINI_API_KEY") or ""
-    
+    provider_base_url = (req.providerBaseUrl or "").strip() or None
+
     # Check if the key is empty or just the default placeholder from the .env file.
-    is_default_key_unconfigured = api_key == "" or api_key == "MY_GEMINI_API_KEY" or "MY_" in api_key
+    # Irrelevant once a custom provider is set — that's an explicit BYO-everything choice.
+    is_default_key_unconfigured = not provider_base_url and (api_key == "" or api_key == "MY_GEMINI_API_KEY" or "MY_" in api_key)
 
     # 3. Offline Fallback Check
-    # If we have no API key, skip Google entirely and generate a hardcoded offline reply.
+    # If we have no API key and no custom provider, skip Google entirely and generate a hardcoded offline reply.
     if is_default_key_unconfigured and not req.customApiKey:
         fallback = generate_offline_response(text_content, req.mode, req.character, req.isUnhinged)
         return {
@@ -61,23 +63,28 @@ async def generate_response(req: GenerationRequest):
 
     # 4. Resolve the Model Name
     model_name = req.selectedModel or "gemini-3.5-flash"
-    
-    # Map any legacy or typo'd Gemma names to the official API names.
-    if model_name in ["gemma-4-26b-a4b-it"]:
-        model_name = "gemma-4-26b-a4b-it"  ###3what the fuck is this choopped model you fucking fix it trir nohwtw fiopaf
-    elif model_name == "gemma-4-31b":
-        model_name = "gemma-4-31b"
 
-    # A list of models we officially allow.
-    allowed_models = [
-        "gemini-2.5-flash", "gemini-2.5-pro",
-        "gemini-1.5-flash", "gemini-1.5-pro",
-        "gemini-3.5-flash", "gemma-4-26b-a4b-it",
-        "gemma-4-31b"
-    ]
-    # If a hacker or bug tries to request a weird model, force it back to default.
-    if model_name not in allowed_models:
-        model_name = "gemini-3.5-flash"
+    if provider_base_url:
+        # A custom provider's model catalog is arbitrary (e.g. "google/gemini-2.5-flash"
+        # on OpenRouter) — the Gemini-specific allowlist below doesn't apply.
+        pass
+    else:
+        # Map any legacy or typo'd Gemma names to the official API names.
+        if model_name in ["gemma-4-26b-a4b-it"]:
+            model_name = "gemma-4-26b-a4b-it"  ###3what the fuck is this choopped model you fucking fix it trir nohwtw fiopaf
+        elif model_name == "gemma-4-31b":
+            model_name = "gemma-4-31b"
+
+        # A list of models we officially allow.
+        allowed_models = [
+            "gemini-2.5-flash", "gemini-2.5-pro",
+            "gemini-1.5-flash", "gemini-1.5-pro",
+            "gemini-3.5-flash", "gemma-4-26b-a4b-it",
+            "gemma-4-31b"
+        ]
+        # If a hacker or bug tries to request a weird model, force it back to default.
+        if model_name not in allowed_models:
+            model_name = "gemini-3.5-flash"
 
     # 5. Build the System Instruction (the prompt)
     system_instruction = get_system_instruction(
@@ -95,15 +102,27 @@ async def generate_response(req: GenerationRequest):
         # Calculate temperature (chaos level)
         temperature = 0.95 if req.isUnhinged else (req.ragebaitLevel if req.ragebaitLevel is not None else 0.8)
         
-        # Ask our LLM service to do the heavy lifting
-        reply = call_gemini(
-            api_key=api_key,
-            model_name=model_name,
-            system_instruction=system_instruction,
-            temperature=temperature,
-            history=req.history,
-            text_content=text_content
-        )
+        # Ask our LLM service to do the heavy lifting — Gemini directly, or
+        # whatever OpenAI-compatible provider the user pointed us at.
+        if provider_base_url:
+            reply = call_openai_compatible(
+                base_url=provider_base_url,
+                api_key=api_key,
+                model_name=model_name,
+                system_instruction=system_instruction,
+                temperature=temperature,
+                history=req.history,
+                text_content=text_content
+            )
+        else:
+            reply = call_gemini(
+                api_key=api_key,
+                model_name=model_name,
+                system_instruction=system_instruction,
+                temperature=temperature,
+                history=req.history,
+                text_content=text_content
+            )
         
         # If successful, return the final data back to the React frontend!
         # FastAPI automatically converts this Python dictionary into a JSON response.
@@ -160,9 +179,10 @@ async def roundtable_generate(req: RoundtableRequest):
 
     # 2. Resolve key + model the same way /yoda/generate does.
     api_key = req.customApiKey or os.getenv("GEMINI_API_KEY") or ""
-    is_default_key_unconfigured = api_key == "" or api_key == "MY_GEMINI_API_KEY" or "MY_" in api_key
+    provider_base_url = (req.providerBaseUrl or "").strip() or None
+    is_default_key_unconfigured = not provider_base_url and (api_key == "" or api_key == "MY_GEMINI_API_KEY" or "MY_" in api_key)
     model_name = req.selectedModel or "gemini-3.5-flash"
-    if model_name not in ROUNDTABLE_ALLOWED_MODELS:
+    if not provider_base_url and model_name not in ROUNDTABLE_ALLOWED_MODELS:
         model_name = "gemini-3.5-flash"
 
     # 3. Pick the pipeline: a direct @name reply, a full router-led round, or the keyless scripted demo.

@@ -8,8 +8,6 @@
 import asyncio
 from typing import AsyncIterator, Dict, List, Tuple
 
-from google import genai
-
 from app.models.roundtable_schemas import (
     BoardroomSynthesis,
     CharacterTurnOutput,
@@ -19,7 +17,7 @@ from app.models.roundtable_schemas import (
     RoundtableRequest,
 )
 from app.services.characters import CharacterSpec, get_character
-from app.services.llm_service import call_gemini_json
+from app.services.llm_service import make_caller
 from app.services.memory import recall_subgraph, render_graph_for_prompt, sanitize_delta
 from app.services.roundtable_prompts import (
     build_character_turn_prompt,
@@ -148,7 +146,7 @@ async def run_direct_reply(req: RoundtableRequest, api_key: str, model_name: str
     speaker = get_character(req.targetCharacterId)
     transcript = _transcript_from_request(req)
 
-    client = genai.Client(api_key=api_key)
+    caller = make_caller(api_key, model_name, req.providerBaseUrl)
 
     yield {"event": "round_start", "data": {"mode": req.mode, "participants": seated_ids, "maxTurns": 1}}
     directive = "The user addressed you directly by name. Reply only to them — do not summon the rest of the table."
@@ -164,7 +162,7 @@ async def run_direct_reply(req: RoundtableRequest, api_key: str, model_name: str
         memory_render = render_graph_for_prompt(nodes, edges, speaker.id)
         system, user = build_character_turn_prompt(
             speaker, req.mode, directive, memory_render, transcript, req.responseLength or "medium", seated)
-        turn = await call_gemini_json(client, model_name, system, user, CharacterTurnOutput, speaker.temperature)
+        turn = await caller.json(system, user, CharacterTurnOutput, speaker.temperature)
         delta = sanitize_delta(turn.memory_delta)
         yield {"event": "turn_complete", "data": {
             "speaker": speaker.id, "turnIndex": 0,
@@ -193,7 +191,7 @@ async def run_roundtable(req: RoundtableRequest, api_key: str, model_name: str) 
     turns_taken = 0
     consecutive_failures = 0
 
-    client = genai.Client(api_key=api_key)  # one client for the whole round
+    caller = make_caller(api_key, model_name, req.providerBaseUrl)  # one caller for the whole round
 
     yield {"event": "round_start", "data": {"mode": req.mode, "participants": seated_ids, "maxTurns": max_turns}}
 
@@ -201,7 +199,7 @@ async def run_roundtable(req: RoundtableRequest, api_key: str, model_name: str) 
         # --- ROUTER: who speaks next? ---
         try:
             system, user = build_router_prompt(req.mode, seated, transcript, turns_taken, max_turns, spoken_counts)
-            decision = await call_gemini_json(client, model_name, system, user, RouterDecision, ROUTER_TEMPERATURE)
+            decision = await caller.json(system, user, RouterDecision, ROUTER_TEMPERATURE)
         except Exception:
             decision = _fallback_router_decision(seated, spoken_counts, turns_taken, recent_speakers[-1] if recent_speakers else "")
 
@@ -228,7 +226,7 @@ async def run_roundtable(req: RoundtableRequest, api_key: str, model_name: str) 
             memory_render = render_graph_for_prompt(nodes, edges, speaker.id)
             system, user = build_character_turn_prompt(
                 speaker, req.mode, directive, memory_render, transcript, req.responseLength or "medium", seated)
-            turn = await call_gemini_json(client, model_name, system, user, CharacterTurnOutput, speaker.temperature)
+            turn = await caller.json(system, user, CharacterTurnOutput, speaker.temperature)
             delta = sanitize_delta(turn.memory_delta)
             if turn.stance_score is not None:
                 stance_scores[speaker.id] = turn.stance_score
@@ -260,7 +258,7 @@ async def run_roundtable(req: RoundtableRequest, api_key: str, model_name: str) 
     schema = PitchSynthesis if req.mode == "pitch" else BoardroomSynthesis
     try:
         system, user = build_synthesis_prompt(req.mode, seated, transcript, stance_scores)
-        synthesis = await call_gemini_json(client, model_name, system, user, schema, SYNTHESIS_TEMPERATURE)
+        synthesis = await caller.json(system, user, schema, SYNTHESIS_TEMPERATURE)
         synthesis_data = {"kind": req.mode, **synthesis.model_dump()}
     except Exception:
         synthesis_data = _naive_synthesis(req.mode, seated, stance_scores)

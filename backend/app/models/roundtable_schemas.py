@@ -164,6 +164,7 @@ class RoundtableRequest(BaseModel):
     participants: List[SeatedCharacter] = []
     history: List[RoundtableMessage] = []
     customApiKey: Optional[str] = None
+    providerBaseUrl: Optional[str] = None  # BYO OpenAI-compatible endpoint (OpenRouter, etc.)
     selectedModel: Optional[str] = "gemini-3.5-flash"
     responseLength: Optional[str] = "medium"
     maxTurns: int = 8  # server clamps 3..10
