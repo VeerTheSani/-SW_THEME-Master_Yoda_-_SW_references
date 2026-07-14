@@ -16,7 +16,7 @@ import {
   getDocs,
   collection
 } from "firebase/firestore";
-import { ChatSession } from "../types";
+import { ChatSession, CharacterId, CharacterMemoryGraph, RoundtableEntry, RoundtableSession } from "../types";
 
 const firebaseConfig = {
   apiKey: "insert your own key sucker!",
@@ -136,5 +136,218 @@ export async function dbLoadSessions(userId: string): Promise<ChatSession[]> {
   } catch (e) {
     console.error("Firestore dbLoadSessions failed:", e);
     return [];
+  }
+}
+
+// ==============================================================================
+// THE ROUNDTABLE — per-character graph memory + table session persistence
+// ==============================================================================
+
+/**
+ * Saves one character's knowledge graph to users/{uid}/characterMemory/{characterId}.
+ * Field-by-field sanitize, house pattern: Firestore rejects `undefined`.
+ */
+export async function dbSaveCharacterMemory(userId: string, graph: CharacterMemoryGraph) {
+  try {
+    const docRef = doc(db, "users", userId, "characterMemory", graph.characterId);
+    await setDoc(docRef, {
+      characterId: graph.characterId,
+      version: graph.version ?? 0,
+      updatedAt: graph.updatedAt || new Date().toISOString(),
+      nodes: (graph.nodes || []).map(n => ({
+        id: n.id,
+        label: n.label || "",
+        type: n.type || "concept",
+        summary: n.summary || "",
+        stance: n.stance ?? null,
+        salience: n.salience ?? 0.5,
+        mentions: n.mentions ?? 1,
+        createdAt: n.createdAt || "",
+        updatedAt: n.updatedAt || ""
+      })),
+      edges: (graph.edges || []).map(e => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        relation: e.relation || "related_to",
+        stance: e.stance ?? null,
+        weight: e.weight ?? 0.5,
+        note: e.note ?? null,
+        createdAt: e.createdAt || "",
+        updatedAt: e.updatedAt || ""
+      }))
+    });
+  } catch (e) {
+    console.error("Firestore dbSaveCharacterMemory failed:", e);
+  }
+}
+
+/**
+ * Loads every character memory graph stored for this user, keyed by characterId.
+ */
+export async function dbLoadCharacterMemories(userId: string): Promise<Partial<Record<CharacterId, CharacterMemoryGraph>>> {
+  try {
+    const colRef = collection(db, "users", userId, "characterMemory");
+    const snap = await getDocs(colRef);
+    const memories: Partial<Record<CharacterId, CharacterMemoryGraph>> = {};
+    snap.forEach(d => {
+      const data = d.data();
+      memories[d.id as CharacterId] = {
+        characterId: d.id as CharacterId,
+        version: data.version ?? 0,
+        updatedAt: data.updatedAt || "",
+        nodes: (data.nodes || []).map((n: any) => ({
+          id: n.id,
+          label: n.label || "",
+          type: n.type || "concept",
+          summary: n.summary || "",
+          stance: n.stance ?? null,
+          salience: n.salience ?? 0.5,
+          mentions: n.mentions ?? 1,
+          createdAt: n.createdAt || "",
+          updatedAt: n.updatedAt || ""
+        })),
+        edges: (data.edges || []).map((e: any) => ({
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          relation: e.relation || "related_to",
+          stance: e.stance ?? null,
+          weight: e.weight ?? 0.5,
+          note: e.note ?? null,
+          createdAt: e.createdAt || "",
+          updatedAt: e.updatedAt || ""
+        }))
+      };
+    });
+    return memories;
+  } catch (e) {
+    console.error("Firestore dbLoadCharacterMemories failed:", e);
+    return {};
+  }
+}
+
+function sanitizeRoundtableEntry(entry: RoundtableEntry): Record<string, any> {
+  if (entry.kind === "user") {
+    return { kind: "user", id: entry.id, text: entry.text, timestamp: entry.timestamp };
+  }
+  if (entry.kind === "turn") {
+    return {
+      kind: "turn",
+      id: entry.id,
+      speaker: entry.speaker,
+      turnIndex: entry.turnIndex ?? 0,
+      directive: entry.directive ?? null,
+      routerReasoning: entry.routerReasoning ?? null,
+      innerThought: entry.innerThought || "",
+      publicReply: entry.publicReply || "",
+      stanceScore: entry.stanceScore ?? null,
+      recalledNodeLabels: entry.recalledNodeLabels ?? [],
+      isFallback: !!entry.isFallback,
+      timestamp: entry.timestamp
+    };
+  }
+  const synthesis = entry.synthesis;
+  return {
+    kind: "synthesis",
+    id: entry.id,
+    timestamp: entry.timestamp,
+    synthesis: synthesis.kind === "pitch"
+      ? {
+          kind: "pitch",
+          verdict: synthesis.verdict,
+          summary: synthesis.summary || "",
+          scorecard: (synthesis.scorecard || []).map(s => ({
+            judge: s.judge, score: s.score ?? 0, objection: s.objection || ""
+          }))
+        }
+      : {
+          kind: "boardroom",
+          decision: synthesis.decision || "",
+          rationale: synthesis.rationale || "",
+          dissent: synthesis.dissent ?? null,
+          actionItems: (synthesis.actionItems || []).map(a => ({ owner: a.owner || "user", item: a.item || "" }))
+        }
+  };
+}
+
+/**
+ * Saves a roundtable session (table transcript) to users/{uid}/roundtableSessions/{id}.
+ * Note: turn entries drop memoryDelta on purpose — deltas are already merged into
+ * the character graphs; the transcript only needs what is displayed.
+ */
+export async function dbSaveRoundtableSession(userId: string, session: RoundtableSession) {
+  try {
+    const docRef = doc(db, "users", userId, "roundtableSessions", session.id);
+    await setDoc(docRef, {
+      id: session.id,
+      title: session.title || "Table session",
+      mode: session.mode,
+      participants: session.participants || [],
+      entries: (session.entries || []).map(sanitizeRoundtableEntry),
+      createdAt: session.createdAt,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (e) {
+    console.error("Firestore dbSaveRoundtableSession failed:", e);
+  }
+}
+
+/**
+ * Loads all roundtable sessions for this user, oldest first.
+ */
+export async function dbLoadRoundtableSessions(userId: string): Promise<RoundtableSession[]> {
+  try {
+    const colRef = collection(db, "users", userId, "roundtableSessions");
+    const snap = await getDocs(colRef);
+    const sessions: RoundtableSession[] = [];
+    snap.forEach(d => {
+      const data = d.data();
+      sessions.push({
+        id: d.id,
+        title: data.title || "Table session",
+        mode: data.mode === "boardroom" ? "boardroom" : "pitch",
+        participants: data.participants || [],
+        createdAt: data.createdAt || new Date().toISOString(),
+        updatedAt: data.updatedAt || "",
+        entries: (data.entries || []).map((entry: any): RoundtableEntry => {
+          if (entry.kind === "user") {
+            return { kind: "user", id: entry.id, text: entry.text || "", timestamp: entry.timestamp || "" };
+          }
+          if (entry.kind === "turn") {
+            return {
+              kind: "turn",
+              id: entry.id,
+              speaker: entry.speaker,
+              turnIndex: entry.turnIndex ?? 0,
+              directive: entry.directive ?? undefined,
+              routerReasoning: entry.routerReasoning ?? undefined,
+              innerThought: entry.innerThought || "",
+              publicReply: entry.publicReply || "",
+              stanceScore: entry.stanceScore ?? null,
+              recalledNodeLabels: entry.recalledNodeLabels || [],
+              isFallback: !!entry.isFallback,
+              timestamp: entry.timestamp || ""
+            };
+          }
+          return { kind: "synthesis", id: entry.id, synthesis: entry.synthesis, timestamp: entry.timestamp || "" };
+        })
+      });
+    });
+    return sessions.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  } catch (e) {
+    console.error("Firestore dbLoadRoundtableSessions failed:", e);
+    return [];
+  }
+}
+
+/**
+ * Deletes a roundtable session.
+ */
+export async function dbDeleteRoundtableSession(userId: string, sessionId: string) {
+  try {
+    await deleteDoc(doc(db, "users", userId, "roundtableSessions", sessionId));
+  } catch (e) {
+    console.error("Firestore dbDeleteRoundtableSession failed:", e);
   }
 }
