@@ -239,7 +239,9 @@ async def run_admin_roundtable(req: RoundtableRequest, api_key: str, model_name:
             nodes, edges, recall = recall_events(speaker.id, index)
             yield recall
             system, user = turn_prompt(speaker, planned.directive, nodes, edges)
-            prepared.append((index, speaker, caller.json(system, user, CharacterTurnOutput, speaker.temperature)))
+            # Hard per-call timeout: one stalled connection must not dead-air the whole stream.
+            call = asyncio.wait_for(caller.json(system, user, CharacterTurnOutput, speaker.temperature), timeout=90)
+            prepared.append((index, speaker, call))
 
         results = await asyncio.gather(*(call for _i, _s, call in prepared), return_exceptions=True)
         for (index, speaker, _call), result in zip(prepared, results):

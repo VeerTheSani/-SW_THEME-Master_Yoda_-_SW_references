@@ -7,9 +7,10 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel, ValidationError
 
-# Providers whose own routes are checked for burst-limit style errors before
-# giving up and retrying once. Covers Gemini's wording and OpenAI/OpenRouter's.
-_RATE_LIMIT_MARKERS = ("429", "resource_exhausted", "quota", "rate limit", "rate_limit")
+# Providers whose own routes are checked for burst-limit / transient-overload
+# style errors before giving up and retrying once. Covers Gemini's wording
+# ("RESOURCE_EXHAUSTED", "503 UNAVAILABLE ... overloaded") and OpenAI/OpenRouter's.
+_RATE_LIMIT_MARKERS = ("429", "resource_exhausted", "quota", "rate limit", "rate_limit", "503", "overloaded")
 
 
 def call_gemini(api_key: str, model_name: str, system_instruction: str, temperature: float, history: list, text_content: str) -> str:
