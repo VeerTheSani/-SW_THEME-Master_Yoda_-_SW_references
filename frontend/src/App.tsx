@@ -1540,7 +1540,7 @@ export default function App() {
               // Custom provider mode — all three fields grouped in one obvious card.
               <div className={`mt-3 p-4 rounded-xl border-2 border-dashed space-y-3 ${isUnhinged ? "border-rose-600 bg-[#180a0c]" : "border-amber-600 bg-amber-50"}`}>
                 <p className={`text-[10px] ${isUnhinged ? "text-rose-400" : "text-stone-600"} leading-relaxed font-sans font-medium`}>
-                  Every request (single chat and The Roundtable) now goes to <strong>your</strong> endpoint instead of Google. Fill in all three fields — the model dropdown above has already switched to free text.
+                  Every request (single chat and The Roundtable) now goes to <strong>your</strong> endpoint instead of Google. Fill in all three fields below.
                 </p>
                 <div>
                   <label className="text-[10px] font-mono font-bold uppercase tracking-wide text-stone-600">1. Base URL (required)</label>
@@ -1573,7 +1573,20 @@ export default function App() {
                     {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                   </button>
                 </div>
-                <p className="text-[10px] font-mono text-stone-500">3. Model id is set in "2. Select Sketch Model" above (now a text box, not a dropdown).</p>
+                <div>
+                  <label className="text-[10px] font-mono font-bold uppercase tracking-wide text-stone-600">3. Model Name (required)</label>
+                  <input
+                    type="text"
+                    value={selectedModel}
+                    onChange={(e) => {
+                      setSelectedModel(e.target.value);
+                      syncActiveStateToSessionsList({ selectedModel: e.target.value });
+                    }}
+                    placeholder="Type it — e.g. google/gemini-2.5-flash or anthropic/claude-sonnet-4.5"
+                    className={`mt-1 w-full ${isUnhinged ? "bg-[#181011] text-rose-100 border-rose-600 focus:ring-[#f43f5e]" : "bg-white border-[#1e1b18] text-[#1e1b18] focus:ring-amber-500"} border-2 text-xs font-mono rounded-lg px-3 py-2 outline-none placeholder:italic placeholder:text-stone-400 transition-all font-bold`}
+                  />
+                  <p className="mt-1 text-[10px] font-mono text-stone-500">Whatever id your provider's catalog uses — sent as-is, no allowlist.</p>
+                </div>
               </div>
             )}
           </div>
