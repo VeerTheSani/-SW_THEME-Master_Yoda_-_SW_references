@@ -2,8 +2,8 @@
 # ROUNDTABLE SCHEMAS (models/roundtable_schemas.py)
 # ==============================================================================
 # Request/response models for the multi-character roundtable, plus the
-# structured-output schemas handed to Gemini (response_schema) for the router,
-# the character turns and the round synthesis.
+# structured-output schemas handed to Gemini (response_schema) for the
+# master-admin moderator, the character turns and the round synthesis.
 
 from pydantic import BaseModel, Field
 from typing import List, Literal, Optional
@@ -99,11 +99,20 @@ class MemoryDelta(BaseModel):
 # Gemini structured outputs
 # ------------------------------------------------------------------------------
 
-class RouterDecision(BaseModel):
-    action: Literal["speak", "end_round"]
-    next_speaker: Optional[str] = Field(default=None, description="characterId of who speaks next; required when action=speak")
-    directive: Optional[str] = Field(default=None, description="One-line stage direction for the speaker, e.g. 'Rebut Anna's CAC estimate — you disagree'")
-    reasoning: str = Field(description="One sentence: why this speaker / why the round ends")
+class AdminTurnPlan(BaseModel):
+    speaker: str = Field(description="characterId of the seated character who should speak")
+    directive: str = Field(description="One concrete stage direction for this speaker, e.g. 'Rebut Anna's CAC estimate — you disagree'")
+
+
+class AdminDecision(BaseModel):
+    turns: List[AdminTurnPlan] = Field(
+        description="Who responds to the user's message, in speaking order. 1 speaker for a narrow or targeted point, 2-3 when the matter deserves a debate."
+    )
+    close_round: bool = Field(
+        default=False,
+        description="True ONLY when positions have clashed enough that the table should produce its final synthesis after these turns",
+    )
+    reasoning: str = Field(description="One sentence: why these speakers (and why closing, if closing)")
 
 
 class CharacterTurnOutput(BaseModel):
@@ -167,8 +176,9 @@ class RoundtableRequest(BaseModel):
     providerBaseUrl: Optional[str] = None  # BYO OpenAI-compatible endpoint (OpenRouter, etc.)
     selectedModel: Optional[str] = "gemini-3.5-flash"
     responseLength: Optional[str] = "medium"
-    maxTurns: int = 8  # server clamps 3..10
-    targetCharacterId: Optional[str] = None  # set via @name — bypasses the router for one direct reply
+    maxTurns: int = 8  # legacy field — the admin now decides 1-3 turns per user message
+    targetCharacterId: Optional[str] = None  # set via @name — bypasses the admin for one direct reply
+    parallelReplies: bool = False  # multiple chosen speakers reply independently (concurrent) instead of one-by-one
 
     class Config:
         extra = "ignore"

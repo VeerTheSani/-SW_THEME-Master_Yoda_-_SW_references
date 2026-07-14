@@ -1,9 +1,10 @@
 # ==============================================================================
 # ROUNDTABLE PROMPTS (services/roundtable_prompts.py)
 # ==============================================================================
-# Prompt builders for the three roundtable agents: the router (who speaks next),
-# the character turns (hidden thought + public reply + memory delta) and the
-# round synthesis (boardroom decision / pitch verdict).
+# Prompt builders for the three roundtable agents: the master admin (which 1-3
+# characters answer the user, and whether to close the round), the character
+# turns (hidden thought + public reply + memory delta) and the round synthesis
+# (boardroom decision / pitch verdict).
 
 from typing import Dict, List, Tuple
 
@@ -74,33 +75,40 @@ def roster_bios(seated: List[CharacterSpec], mode: str) -> str:
     )
 
 
-def build_router_prompt(
+def build_admin_prompt(
     mode: str,
     seated: List[CharacterSpec],
     transcript: List[Tuple[str, str]],
-    turns_taken: int,
-    max_turns: int,
     spoken_counts: Dict[str, int],
+    allow_close: bool,
 ) -> Tuple[str, str]:
-    """Returns (system_instruction, user_content) for the router call."""
+    """Returns (system_instruction, user_content) for the master-admin call.
+    One decision per user message: which 1-3 characters answer, and whether the
+    debate is ripe for a closing synthesis."""
     spec = MODE_SPECS[mode]
+    close_rule = (
+        "- Set close_round=true ONLY when positions have clashed and the matter is ripe for a final ruling "
+        "(or the user explicitly asks for a verdict/decision)."
+        if allow_close
+        else "- The debate is too young to close: close_round MUST be false."
+    )
     system = (
-        f"You are the invisible MODERATOR of a multi-character AI roundtable.\n{spec['scene']}\n\n"
-        f"YOUR JOB: {spec['router_goal']}\n\n"
+        f"You are the MASTER MODERATOR of a multi-character AI roundtable.\n{spec['scene']}\n\n"
+        f"YOUR JOB: The user has just addressed the table. Decide which seated characters respond. {spec['router_goal']}\n\n"
         "RULES:\n"
-        "- Choose next_speaker from the seated characterIds only.\n"
-        "- Every seated character must speak at least once before you may end the round.\n"
-        "- Never pick the same speaker three times in a row.\n"
-        "- Prefer the character with the strongest reason to react to what was just said (disagreement, being named, expertise).\n"
-        "- directive must be ONE concrete stage direction naming who/what to react to.\n"
-        f"- The round has a hard cap of {max_turns} speaking turns; wrap up naturally before that."
+        "- Pick 1 to 3 speakers from the seated characterIds — no duplicates, listed in speaking order.\n"
+        "- ONE speaker when the message is narrow, personal, or clearly aimed at one portfolio; "
+        "TWO or THREE when it deserves debate or several seats are implicated.\n"
+        "- Favor speakers with the strongest reason to react (named directly, expertise, standing disagreement).\n"
+        "- Each directive is ONE concrete stage direction naming who/what to react to.\n"
+        f"{close_rule}"
     )
     spoken = ", ".join(f"{cid}: {count}x" for cid, count in spoken_counts.items())
     user = (
         f"SEATED CHARACTERS:\n{roster_bios(seated, mode)}\n\n"
-        f"TURNS TAKEN SO FAR: {turns_taken} of max {max_turns}. Times each has spoken: {spoken}.\n\n"
+        f"Times each has spoken so far: {spoken or '(no one yet)'}.\n\n"
         f"TRANSCRIPT:\n{format_transcript(transcript)}\n\n"
-        "Decide: who speaks next (action='speak') or does the round end (action='end_round')?"
+        "The USER spoke last. Decide who responds — produce your JSON decision."
     )
     return system, user
 

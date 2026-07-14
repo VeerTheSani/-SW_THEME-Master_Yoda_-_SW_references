@@ -16,10 +16,10 @@ from app.services.prompts import get_system_instruction, generate_offline_respon
 from app.services.llm_service import call_gemini, call_openai_compatible
 from app.services.characters import CHARACTERS
 from app.services.orchestrator import (
+    run_admin_roundtable,
     run_direct_reply,
     run_offline_direct_reply,
     run_offline_roundtable,
-    run_roundtable,
 )
 from app.services.roundtable_prompts import MODE_SPECS
 
@@ -79,8 +79,8 @@ async def generate_response(req: GenerationRequest):
         allowed_models = [
             "gemini-2.5-flash", "gemini-2.5-pro",
             "gemini-1.5-flash", "gemini-1.5-pro",
-            "gemini-3.5-flash", "gemma-4-26b-a4b-it",
-            "gemma-4-31b"
+            "gemini-3.5-flash", "gemini-3.1-flash-lite",
+            "gemma-4-26b-a4b-it", "gemma-4-31b"
         ]
         # If a hacker or bug tries to request a weird model, force it back to default.
         if model_name not in allowed_models:
@@ -157,7 +157,7 @@ async def generate_response(req: GenerationRequest):
 
 ROUNDTABLE_ALLOWED_MODELS = [
     "gemini-2.5-flash", "gemini-2.5-pro",
-    "gemini-3.5-flash",
+    "gemini-3.5-flash", "gemini-3.1-flash-lite",
 ]
 
 
@@ -185,14 +185,14 @@ async def roundtable_generate(req: RoundtableRequest):
     if not provider_base_url and model_name not in ROUNDTABLE_ALLOWED_MODELS:
         model_name = "gemini-3.5-flash"
 
-    # 3. Pick the pipeline: a direct @name reply, a full router-led round, or the keyless scripted demo.
+    # 3. Pick the pipeline: a direct @name reply, an admin-planned exchange, or the keyless scripted demo.
     is_offline = is_default_key_unconfigured and not req.customApiKey
     if req.targetCharacterId:
         generator = run_offline_direct_reply(req) if is_offline else run_direct_reply(req, api_key, model_name)
     elif is_offline:
         generator = run_offline_roundtable(req)
     else:
-        generator = run_roundtable(req, api_key, model_name)
+        generator = run_admin_roundtable(req, api_key, model_name)
 
     async def ndjson_stream():
         try:

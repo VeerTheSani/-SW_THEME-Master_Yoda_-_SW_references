@@ -202,10 +202,11 @@ class Caller:
         self.base_url = base_url
         self.api_key = api_key
 
-    async def json(self, system_instruction: str, user_content: str, response_schema: type[BaseModel], temperature: float = 0.9) -> BaseModel:
+    async def json(self, system_instruction: str, user_content: str, response_schema: type[BaseModel], temperature: float = 0.9, model: Optional[str] = None) -> BaseModel:
+        model_name = model or self.model_name
         if self.gemini_client is not None:
-            return await call_gemini_json(self.gemini_client, self.model_name, system_instruction, user_content, response_schema, temperature)
-        return await call_openai_compatible_json(self.base_url, self.api_key, self.model_name, system_instruction, user_content, response_schema, temperature)
+            return await call_gemini_json(self.gemini_client, model_name, system_instruction, user_content, response_schema, temperature)
+        return await call_openai_compatible_json(self.base_url, self.api_key, model_name, system_instruction, user_content, response_schema, temperature)
 
 
 def make_caller(api_key: str, model_name: str, base_url: Optional[str] = None) -> Caller:

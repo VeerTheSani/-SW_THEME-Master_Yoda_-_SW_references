@@ -74,6 +74,15 @@ export function RoundtablePanel({
   const [inputText, setInputText] = useState("");
   const [errorText, setErrorText] = useState<string | null>(null);
   const [showRoster, setShowRoster] = useState((initialSession?.entries?.length ?? 0) === 0);
+  // Admin multi-reply style: chosen speakers go one-by-one (reacting to each
+  // other) or all at once (independent, faster).
+  const [parallelReplies, setParallelReplies] = useState(
+    () => localStorage.getItem("roundtable_parallel_replies") === "true",
+  );
+  const handleReplyStyleChange = (parallel: boolean) => {
+    setParallelReplies(parallel);
+    localStorage.setItem("roundtable_parallel_replies", String(parallel));
+  };
 
   // Persist the table's minutes whenever they change (id stays stable).
   const sessionIdRef = useRef(initialSession?.id ?? `table-${Date.now()}`);
@@ -241,6 +250,7 @@ export function RoundtablePanel({
           responseLength: "medium",
           maxTurns: targetId ? 1 : MAX_TURNS,
           targetCharacterId: targetId,
+          parallelReplies,
         },
         (event) => handleEvent(event, roundStartIso),
         controller.signal,
@@ -279,6 +289,25 @@ export function RoundtablePanel({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Admin multi-reply style toggle */}
+            <div className="flex border-[2.5px] border-[#1e1b18] sketch-border-1 overflow-hidden font-mono text-[11px] uppercase tracking-wide font-bold">
+              <button
+                onClick={() => handleReplyStyleChange(false)}
+                disabled={isRunning}
+                className={`px-2.5 py-1.5 ${!parallelReplies ? "bg-[#1e1b18] text-[#f7f4eb]" : "bg-white hover:bg-stone-100"} ${isRunning ? "opacity-50 cursor-not-allowed" : ""}`}
+                title="Chosen speakers reply one after another, reacting to each other"
+              >
+                🎙️ In turn
+              </button>
+              <button
+                onClick={() => handleReplyStyleChange(true)}
+                disabled={isRunning}
+                className={`px-2.5 py-1.5 border-l-[2.5px] border-[#1e1b18] ${parallelReplies ? "bg-[#1e1b18] text-[#f7f4eb]" : "bg-white hover:bg-stone-100"} ${isRunning ? "opacity-50 cursor-not-allowed" : ""}`}
+                title="Chosen speakers reply at the same time, independently of each other"
+              >
+                ⚡ All at once
+              </button>
+            </div>
             {entries.length > 0 && (
               <button
                 onClick={() => {

@@ -1,37 +1,40 @@
 # ==============================================================================
 # ROUNDTABLE ORCHESTRATOR (services/orchestrator.py)
 # ==============================================================================
-# The round loop: a router agent decides who speaks; each character turn is one
-# structured Gemini call (hidden thought + public reply + memory delta); a
-# synthesis agent closes the round. Yields NDJSON-protocol event dicts.
+# One admin decision per user message: a master-admin agent (fast model) picks
+# which 1-3 characters answer and whether the debate is ripe for a closing
+# synthesis. Each character turn is one structured call (hidden thought +
+# public reply + memory delta), sequential or parallel. Yields NDJSON events.
 
 import asyncio
 from typing import AsyncIterator, Dict, List, Tuple
 
 from app.models.roundtable_schemas import (
+    AdminDecision,
+    AdminTurnPlan,
     BoardroomSynthesis,
     CharacterTurnOutput,
     MemoryDelta,
     PitchSynthesis,
-    RouterDecision,
     RoundtableRequest,
 )
 from app.services.characters import CharacterSpec, get_character
 from app.services.llm_service import make_caller
 from app.services.memory import recall_subgraph, render_graph_for_prompt, sanitize_delta
 from app.services.roundtable_prompts import (
+    build_admin_prompt,
     build_character_turn_prompt,
-    build_router_prompt,
     build_synthesis_prompt,
 )
 
-MIN_TURNS = 3
-ROUTER_TEMPERATURE = 0.4
+# The admin decision is tiny — speed matters more than depth there. Character
+# turns keep the user-selected model. (There is no plain "gemini-3.1-flash" on
+# the API — lite is the fast 3.1 variant.)
+ADMIN_MODEL = "gemini-3.1-flash-lite"
+ADMIN_TEMPERATURE = 0.3
 SYNTHESIS_TEMPERATURE = 0.5
-
-
-def _clamp_max_turns(requested: int) -> int:
-    return max(MIN_TURNS, min(10, requested))
+# Character turns that must exist in the transcript before the admin may close.
+MIN_TURNS_BEFORE_CLOSE = 3
 
 
 def _transcript_from_request(req: RoundtableRequest) -> List[Tuple[str, str]]:
@@ -53,58 +56,38 @@ def _least_spoken(seated: List[CharacterSpec], spoken_counts: Dict[str, int], ex
     return min(candidates, key=lambda cid: spoken_counts[cid])
 
 
-def _fallback_router_decision(
-    seated: List[CharacterSpec],
-    spoken_counts: Dict[str, int],
-    turns_taken: int,
-    last_speaker: str,
-) -> RouterDecision:
-    everyone_spoke = all(count > 0 for count in spoken_counts.values())
-    if everyone_spoke and turns_taken >= MIN_TURNS:
-        return RouterDecision(action="end_round", reasoning="Moderator offline — round-robin complete, closing the round.")
-    speaker = _least_spoken(seated, spoken_counts, exclude=last_speaker)
-    return RouterDecision(
-        action="speak",
-        next_speaker=speaker,
-        directive="Give your position on the matter at hand and react to the previous speaker.",
-        reasoning="Moderator offline — proceeding round-robin.",
-    )
+def _spoken_counts_from_history(req: RoundtableRequest, seated_ids: List[str]) -> Dict[str, int]:
+    counts = {cid: 0 for cid in seated_ids}
+    for msg in req.history:
+        if msg.sender in counts:
+            counts[msg.sender] += 1
+    return counts
 
 
-def _enforce_router_rules(
-    decision: RouterDecision,
+def _fallback_admin_plan(seated: List[CharacterSpec], spoken_counts: Dict[str, int]) -> Tuple[List[AdminTurnPlan], bool, str]:
+    speaker = _least_spoken(seated, spoken_counts)
+    plan = [AdminTurnPlan(speaker=speaker, directive="Give your position on the matter the user just raised.")]
+    return plan, False, "Moderator offline — handing the floor to the quietest seat."
+
+
+def _sanitize_admin_decision(
+    decision: AdminDecision,
     seated: List[CharacterSpec],
     spoken_counts: Dict[str, int],
-    turns_taken: int,
-    recent_speakers: List[str],
-) -> RouterDecision:
+    allow_close: bool,
+) -> Tuple[List[AdminTurnPlan], bool, str]:
+    """Never trust model output raw: dedupe, drop unknown seats, clamp to 1-3."""
     seated_ids = {s.id for s in seated}
-    everyone_spoke = all(count > 0 for count in spoken_counts.values())
-
-    if decision.action == "end_round":
-        if turns_taken >= MIN_TURNS and everyone_spoke:
-            return decision
-        # Too early — someone hasn't spoken yet. Override to the quietest seat.
-        speaker = _least_spoken(seated, spoken_counts)
-        return RouterDecision(
-            action="speak",
-            next_speaker=speaker,
-            directive="The moderator wants your voice before the round closes — state your position.",
-            reasoning=f"(overridden: {speaker} had not spoken yet) {decision.reasoning}",
-        )
-
-    speaker = decision.next_speaker if decision.next_speaker in seated_ids else _least_spoken(seated, spoken_counts)
-    # No third consecutive turn for the same mouth.
-    if len(recent_speakers) >= 2 and recent_speakers[-1] == recent_speakers[-2] == speaker:
-        speaker = _least_spoken(seated, spoken_counts, exclude=speaker)
-    if speaker != decision.next_speaker:
-        return RouterDecision(
-            action="speak",
-            next_speaker=speaker,
-            directive=decision.directive or "React to what was just said with your own position.",
-            reasoning=f"(speaker adjusted by table rules) {decision.reasoning}",
-        )
-    return decision
+    seen, turns = set(), []
+    for turn in decision.turns:
+        if turn.speaker in seated_ids and turn.speaker not in seen:
+            seen.add(turn.speaker)
+            turns.append(AdminTurnPlan(speaker=turn.speaker, directive=turn.directive or "Give your take."))
+        if len(turns) == 3:
+            break
+    if not turns:
+        return _fallback_admin_plan(seated, spoken_counts)
+    return turns, decision.close_round and allow_close, decision.reasoning
 
 
 def _offline_stances(mode: str) -> List[float]:
@@ -179,92 +162,129 @@ async def run_direct_reply(req: RoundtableRequest, api_key: str, model_name: str
     yield {"event": "round_end", "data": {"turnsTaken": 1}}
 
 
-async def run_roundtable(req: RoundtableRequest, api_key: str, model_name: str) -> AsyncIterator[dict]:
+async def run_admin_roundtable(req: RoundtableRequest, api_key: str, model_name: str) -> AsyncIterator[dict]:
+    """One exchange: the master admin picks 1-3 responders (and possibly closes
+    the round), the chosen characters speak — sequentially or in parallel —
+    then control returns to the user."""
     seated = [get_character(p.characterId) for p in req.participants]
     memories = {p.characterId: p.memory for p in req.participants}
     seated_ids = [s.id for s in seated]
-    max_turns = _clamp_max_turns(req.maxTurns)
     transcript = _transcript_from_request(req)
-    spoken_counts: Dict[str, int] = {cid: 0 for cid in seated_ids}
-    recent_speakers: List[str] = []
+    spoken_counts = _spoken_counts_from_history(req, seated_ids)
     stance_scores: Dict[str, float] = {}
-    turns_taken = 0
-    consecutive_failures = 0
 
-    caller = make_caller(api_key, model_name, req.providerBaseUrl)  # one caller for the whole round
+    caller = make_caller(api_key, model_name, req.providerBaseUrl)  # one caller for the whole exchange
+    # Custom providers have arbitrary catalogs — reuse the user's model there.
+    admin_model = model_name if req.providerBaseUrl else ADMIN_MODEL
+    allow_close = sum(spoken_counts.values()) >= MIN_TURNS_BEFORE_CLOSE
 
-    yield {"event": "round_start", "data": {"mode": req.mode, "participants": seated_ids, "maxTurns": max_turns}}
-
-    while turns_taken < max_turns:
-        # --- ROUTER: who speaks next? ---
+    # --- ADMIN: one decision — who answers, in what order, close or not ---
+    try:
+        system, user = build_admin_prompt(req.mode, seated, transcript, spoken_counts, allow_close)
         try:
-            system, user = build_router_prompt(req.mode, seated, transcript, turns_taken, max_turns, spoken_counts)
-            decision = await caller.json(system, user, RouterDecision, ROUTER_TEMPERATURE)
+            decision = await caller.json(system, user, AdminDecision, ADMIN_TEMPERATURE, model=admin_model)
         except Exception:
-            decision = _fallback_router_decision(seated, spoken_counts, turns_taken, recent_speakers[-1] if recent_speakers else "")
+            if admin_model == model_name:
+                raise
+            # The fast admin model may be unavailable on this key — retry on the chat model.
+            decision = await caller.json(system, user, AdminDecision, ADMIN_TEMPERATURE)
+        plan, close_round, reasoning = _sanitize_admin_decision(decision, seated, spoken_counts, allow_close)
+    except Exception:
+        plan, close_round, reasoning = _fallback_admin_plan(seated, spoken_counts)
 
-        decision = _enforce_router_rules(decision, seated, spoken_counts, turns_taken, recent_speakers)
-        yield {"event": "router_decision", "data": {**decision.model_dump(), "turnIndex": turns_taken}}
+    yield {"event": "round_start", "data": {"mode": req.mode, "participants": seated_ids, "maxTurns": len(plan)}}
 
-        if decision.action == "end_round":
-            break
-
-        speaker = get_character(decision.next_speaker)
-        directive = decision.directive or "Give your take."
-        yield {"event": "turn_start", "data": {"speaker": speaker.id, "turnIndex": turns_taken, "directive": directive}}
-
-        # --- RECALL: deterministic subgraph from the character's own memory ---
+    def recall_events(speaker_id: str, turn_index: int):
         recent_text = " ".join(text for _who, text in transcript[-3:])
-        nodes, edges = recall_subgraph(memories[speaker.id], recent_text, seated_ids)
-        yield {"event": "memory_recall", "data": {
-            "speaker": speaker.id, "turnIndex": turns_taken,
+        nodes, edges = recall_subgraph(memories[speaker_id], recent_text, seated_ids)
+        event = {"event": "memory_recall", "data": {
+            "speaker": speaker_id, "turnIndex": turn_index,
             "nodeIds": [n.id for n in nodes], "nodeLabels": [n.label for n in nodes],
         }}
+        return nodes, edges, event
 
-        # --- TURN: one structured call — hidden thought, public reply, memory delta ---
+    def turn_prompt(speaker: CharacterSpec, directive: str, nodes, edges) -> Tuple[str, str]:
+        memory_render = render_graph_for_prompt(nodes, edges, speaker.id)
+        return build_character_turn_prompt(
+            speaker, req.mode, directive, memory_render, transcript, req.responseLength or "medium", seated)
+
+    def complete_event(speaker: CharacterSpec, turn_index: int, turn: CharacterTurnOutput) -> dict:
+        delta = sanitize_delta(turn.memory_delta)
+        if turn.stance_score is not None:
+            stance_scores[speaker.id] = turn.stance_score
+        return {"event": "turn_complete", "data": {
+            "speaker": speaker.id, "turnIndex": turn_index,
+            "innerThought": turn.inner_thought, "publicReply": turn.public_reply,
+            "stanceScore": turn.stance_score, "memoryDelta": delta.model_dump(), "isFallback": False,
+        }}
+
+    def error_event(speaker: CharacterSpec, turn_index: int, error: Exception) -> Tuple[dict, str]:
+        lines = speaker.offline_lines.get(req.mode) or ["..."]
+        fallback_line = lines[spoken_counts[speaker.id] % len(lines)]
+        return {"event": "turn_error", "data": {
+            "speaker": speaker.id, "turnIndex": turn_index,
+            "message": str(error)[:300], "fallbackReply": fallback_line, "isFallback": True,
+        }}, fallback_line
+
+    if req.parallelReplies and len(plan) > 1:
+        # --- PARALLEL: everyone answers the user independently, blind to each other ---
+        prepared = []
+        for index, planned in enumerate(plan):
+            speaker = get_character(planned.speaker)
+            yield {"event": "router_decision", "data": {
+                "action": "speak", "next_speaker": speaker.id, "directive": planned.directive,
+                "reasoning": reasoning if index == 0 else "", "turnIndex": index,
+            }}
+            yield {"event": "turn_start", "data": {"speaker": speaker.id, "turnIndex": index, "directive": planned.directive}}
+            nodes, edges, recall = recall_events(speaker.id, index)
+            yield recall
+            system, user = turn_prompt(speaker, planned.directive, nodes, edges)
+            prepared.append((index, speaker, caller.json(system, user, CharacterTurnOutput, speaker.temperature)))
+
+        results = await asyncio.gather(*(call for _i, _s, call in prepared), return_exceptions=True)
+        for (index, speaker, _call), result in zip(prepared, results):
+            if isinstance(result, Exception):
+                event, fallback_line = error_event(speaker, index, result)
+                yield event
+                transcript.append((speaker.name, fallback_line))
+            else:
+                yield complete_event(speaker, index, result)
+                transcript.append((speaker.name, result.public_reply))
+            spoken_counts[speaker.id] += 1
+    else:
+        # --- SEQUENTIAL: speakers go in the admin's order, each seeing the last ---
+        for index, planned in enumerate(plan):
+            speaker = get_character(planned.speaker)
+            yield {"event": "router_decision", "data": {
+                "action": "speak", "next_speaker": speaker.id, "directive": planned.directive,
+                "reasoning": reasoning if index == 0 else "", "turnIndex": index,
+            }}
+            yield {"event": "turn_start", "data": {"speaker": speaker.id, "turnIndex": index, "directive": planned.directive}}
+            nodes, edges, recall = recall_events(speaker.id, index)
+            yield recall
+            try:
+                system, user = turn_prompt(speaker, planned.directive, nodes, edges)
+                turn = await caller.json(system, user, CharacterTurnOutput, speaker.temperature)
+                yield complete_event(speaker, index, turn)
+                transcript.append((speaker.name, turn.public_reply))
+            except Exception as e:
+                event, fallback_line = error_event(speaker, index, e)
+                yield event
+                transcript.append((speaker.name, fallback_line))
+            spoken_counts[speaker.id] += 1
+
+    # --- SYNTHESIS: only when the admin declared the debate settled ---
+    if close_round:
+        schema = PitchSynthesis if req.mode == "pitch" else BoardroomSynthesis
         try:
-            memory_render = render_graph_for_prompt(nodes, edges, speaker.id)
-            system, user = build_character_turn_prompt(
-                speaker, req.mode, directive, memory_render, transcript, req.responseLength or "medium", seated)
-            turn = await caller.json(system, user, CharacterTurnOutput, speaker.temperature)
-            delta = sanitize_delta(turn.memory_delta)
-            if turn.stance_score is not None:
-                stance_scores[speaker.id] = turn.stance_score
-            yield {"event": "turn_complete", "data": {
-                "speaker": speaker.id, "turnIndex": turns_taken,
-                "innerThought": turn.inner_thought, "publicReply": turn.public_reply,
-                "stanceScore": turn.stance_score, "memoryDelta": delta.model_dump(), "isFallback": False,
-            }}
-            transcript.append((speaker.name, turn.public_reply))
-            consecutive_failures = 0
-        except Exception as e:
-            lines = speaker.offline_lines.get(req.mode) or ["..."]
-            fallback_line = lines[spoken_counts[speaker.id] % len(lines)]
-            yield {"event": "turn_error", "data": {
-                "speaker": speaker.id, "turnIndex": turns_taken,
-                "message": str(e)[:300], "fallbackReply": fallback_line, "isFallback": True,
-            }}
-            transcript.append((speaker.name, fallback_line))
-            consecutive_failures += 1
+            system, user = build_synthesis_prompt(req.mode, seated, transcript, stance_scores)
+            synthesis = await caller.json(system, user, schema, SYNTHESIS_TEMPERATURE)
+            synthesis_data = {"kind": req.mode, **synthesis.model_dump()}
+        except Exception:
+            synthesis_data = _naive_synthesis(req.mode, seated, stance_scores)
+        yield {"event": "round_synthesis", "data": synthesis_data}
 
-        spoken_counts[speaker.id] += 1
-        recent_speakers.append(speaker.id)
-        turns_taken += 1
-
-        if consecutive_failures >= 2:
-            break
-
-    # --- SYNTHESIS: close the round ---
-    schema = PitchSynthesis if req.mode == "pitch" else BoardroomSynthesis
-    try:
-        system, user = build_synthesis_prompt(req.mode, seated, transcript, stance_scores)
-        synthesis = await caller.json(system, user, schema, SYNTHESIS_TEMPERATURE)
-        synthesis_data = {"kind": req.mode, **synthesis.model_dump()}
-    except Exception:
-        synthesis_data = _naive_synthesis(req.mode, seated, stance_scores)
-
-    yield {"event": "round_synthesis", "data": synthesis_data}
-    yield {"event": "round_end", "data": {"turnsTaken": turns_taken}}
+    yield {"event": "round_end", "data": {"turnsTaken": len(plan)}}
 
 
 async def run_offline_direct_reply(req: RoundtableRequest) -> AsyncIterator[dict]:
