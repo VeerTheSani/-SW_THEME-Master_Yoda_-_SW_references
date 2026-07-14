@@ -166,6 +166,16 @@ export default function App() {
   const [gateApiKeyInput, setGateApiKeyInput] = useState<string>("");
   const [showGateApiKey, setShowGateApiKey] = useState<boolean>(false);
 
+  // Bring-your-own-provider: point every Gemini call at any OpenAI-compatible
+  // endpoint instead (OpenRouter, a local gateway, etc). Empty = use Gemini directly.
+  const [providerBaseUrl, setProviderBaseUrl] = useState<string>(() => {
+    return localStorage.getItem("jedi_provider_base_url") || "";
+  });
+  const handleProviderBaseUrlChange = (value: string) => {
+    setProviderBaseUrl(value);
+    localStorage.setItem("jedi_provider_base_url", value);
+  };
+
   // --- The Roundtable: view toggle + per-character graph memories ---
   const [viewMode, setViewMode] = useState<ViewMode>("single");
   const [characterMemories, setCharacterMemories] = useState<Record<CharacterId, CharacterMemoryGraph>>(() => {
@@ -727,6 +737,7 @@ export default function App() {
           character: character,
           isUnhinged: isUnhinged,
           customApiKey: customApiKey,
+          providerBaseUrl: providerBaseUrl || undefined,
           selectedModel: selectedModel,
           history: updatedMessages.slice(0, -1), // Send full conversation memory history!
           ragebaitLevel: ragebaitLevel,
@@ -840,6 +851,7 @@ export default function App() {
           character: character,
           isUnhinged: isUnhinged,
           customApiKey: customApiKey,
+          providerBaseUrl: providerBaseUrl || undefined,
           selectedModel: selectedModel,
           history: truncatedMessages.slice(0, -1),
           ragebaitLevel: ragebaitLevel,
@@ -1471,6 +1483,28 @@ export default function App() {
               </button>
             </div>
           </div>
+
+          {/* Row 3: Bring-your-own-provider (OpenRouter, or any OpenAI-compatible endpoint) */}
+          <div className={`mt-4 pt-4 border-t-2 ${isUnhinged ? "border-rose-950/40" : "border-stone-900/10"} flex flex-col md:flex-row md:items-center justify-between gap-4`}>
+            <div className="flex-1 max-w-lg space-y-1">
+              <div className={`flex items-center gap-1.5 ${isUnhinged ? "text-rose-300" : "text-stone-800"}`}>
+                <Key className="w-4 h-4 text-stone-600" />
+                <span className="text-xs font-mono font-bold">Custom Provider Base URL (Optional)</span>
+              </div>
+              <p className={`text-[10px] ${isUnhinged ? "text-rose-400" : "text-stone-500"} leading-relaxed font-sans font-medium`}>
+                Route every call through your own OpenAI-compatible endpoint instead — e.g. OpenRouter's <code>https://openrouter.ai/api/v1</code>. The key above becomes that provider's key, and the model field below becomes free text (e.g. <code>google/gemini-2.5-flash</code>).
+              </p>
+            </div>
+            <div className="w-full md:w-80">
+              <input
+                type="text"
+                value={providerBaseUrl}
+                onChange={(e) => handleProviderBaseUrlChange(e.target.value)}
+                placeholder="https://openrouter.ai/api/v1"
+                className={`w-full ${isUnhinged ? "bg-[#181011] text-rose-100 border-rose-600 focus:ring-[#f43f5e] shadow-[2px_2px_0px_0px_#ef4444]" : "bg-white border-[#1e1b18] text-[#1e1b18] focus:ring-[#10b981] shadow-[2px_2px_0px_0px_#1e1b18]"} border-2 text-xs font-mono rounded-lg px-3 py-2 outline-none placeholder:text-stone-400 transition-all font-bold`}
+              />
+            </div>
+          </div>
         </section>
 
         {/* Dashboard Grid */}
@@ -1792,6 +1826,7 @@ export default function App() {
             <React.Fragment key={`table-${roundtableLoadTick}`}>
               <RoundtablePanel
                 customApiKey={customApiKey}
+                providerBaseUrl={providerBaseUrl}
                 selectedModel={selectedModel}
                 memories={characterMemories}
                 onMemoriesChange={handleMemoriesChange}

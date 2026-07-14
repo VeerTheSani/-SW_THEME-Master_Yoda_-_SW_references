@@ -19,19 +19,19 @@ import {
 import { ChatSession, CharacterId, CharacterMemoryGraph, RoundtableEntry, RoundtableSession } from "../types";
 
 const firebaseConfig = {
-  apiKey: "insert your own key sucker!",
-  authDomain: "bold-tempest-hlll2.firebaseapp.com",
-  projectId: "bold-tempest-hlll2",
-  storageBucket: "bold-tempest-hlll2.firebasestorage.app",
-  messagingSenderId: "405032464740",
-  appId: "1:405032464740:web:08e9b9c689470a70950a71"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 
-export const db = getFirestore(app, "ai-studio-25645647-56c2-4567-9044-6c98e8a2b3cf");
+export const db = getFirestore(app, import.meta.env.VITE_FIRESTORE_DATABASE_ID);
 
 
 export const googleProvider = new GoogleAuthProvider();
@@ -229,7 +229,7 @@ export async function dbLoadCharacterMemories(userId: string): Promise<Partial<R
 
 function sanitizeRoundtableEntry(entry: RoundtableEntry): Record<string, any> {
   if (entry.kind === "user") {
-    return { kind: "user", id: entry.id, text: entry.text, timestamp: entry.timestamp };
+    return { kind: "user", id: entry.id, text: entry.text, targetCharacterId: entry.targetCharacterId ?? null, timestamp: entry.timestamp };
   }
   if (entry.kind === "turn") {
     return {
@@ -312,7 +312,7 @@ export async function dbLoadRoundtableSessions(userId: string): Promise<Roundtab
         updatedAt: data.updatedAt || "",
         entries: (data.entries || []).map((entry: any): RoundtableEntry => {
           if (entry.kind === "user") {
-            return { kind: "user", id: entry.id, text: entry.text || "", timestamp: entry.timestamp || "" };
+            return { kind: "user", id: entry.id, text: entry.text || "", targetCharacterId: entry.targetCharacterId ?? null, timestamp: entry.timestamp || "" };
           }
           if (entry.kind === "turn") {
             return {

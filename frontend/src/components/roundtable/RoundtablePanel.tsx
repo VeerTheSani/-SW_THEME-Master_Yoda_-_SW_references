@@ -41,6 +41,7 @@ const MODE_CHIPS: Record<RoundtableMode, Array<{ label: string; text: string }>>
 
 interface RoundtablePanelProps {
   customApiKey: string;
+  providerBaseUrl?: string;
   selectedModel: string;
   memories: Record<CharacterId, CharacterMemoryGraph>;
   onMemoriesChange: (next: Record<CharacterId, CharacterMemoryGraph>) => void;
@@ -57,6 +58,7 @@ function validSeats(participants: CharacterId[] | undefined): CharacterId[] | nu
 
 export function RoundtablePanel({
   customApiKey,
+  providerBaseUrl,
   selectedModel,
   memories,
   onMemoriesChange,
@@ -234,6 +236,7 @@ export function RoundtablePanel({
           participants: seated.map((seatId) => ({ characterId: seatId, memory: memoriesRef.current[seatId] })),
           history: publicHistory,
           customApiKey: customApiKey || undefined,
+          providerBaseUrl: providerBaseUrl || undefined,
           selectedModel,
           responseLength: "medium",
           maxTurns: targetId ? 1 : MAX_TURNS,

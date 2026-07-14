@@ -17,6 +17,7 @@ export interface RoundtableRequestBody {
   participants: Array<{ characterId: CharacterId; memory: CharacterMemoryGraph }>;
   history: Array<{ id: string; sender: string; text: string }>;
   customApiKey?: string;
+  providerBaseUrl?: string;
   selectedModel?: string;
   responseLength?: string;
   maxTurns?: number;
