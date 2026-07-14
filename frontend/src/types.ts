@@ -88,6 +88,7 @@ export interface RoundtableUserEntry {
   kind: "user";
   id: string;
   text: string;
+  targetCharacterId?: CharacterId | null;
   timestamp: string;
 }
 

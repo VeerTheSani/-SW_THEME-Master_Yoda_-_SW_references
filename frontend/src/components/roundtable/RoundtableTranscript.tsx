@@ -68,7 +68,7 @@ export function RoundtableTranscript({ entries, live, mode }: RoundtableTranscri
               className="ml-auto max-w-[85%] w-fit"
             >
               <div className="font-mono text-[9px] uppercase tracking-widest text-stone-400 text-right mb-0.5 mr-1">
-                ✍️ You · to the table
+                ✍️ You · {entry.targetCharacterId ? `direct to ${CHARACTERS[entry.targetCharacterId].shortName}` : "to the table"}
               </div>
               <div className="border-[2.5px] border-[#1e1b18] sketch-border-1 sketch-shadow-sm bg-white px-3.5 py-2.5">
                 <p className="font-sans text-[15px] leading-snug text-stone-900 whitespace-pre-wrap">{entry.text}</p>

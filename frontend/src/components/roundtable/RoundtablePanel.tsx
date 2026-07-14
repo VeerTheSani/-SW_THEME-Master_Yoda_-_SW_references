@@ -17,7 +17,7 @@ import type {
   RoundtableStreamEvent,
   RoundtableTurnEntry,
 } from "../../types";
-import { CHARACTERS } from "../../lib/characters";
+import { CHARACTERS, parseMention } from "../../lib/characters";
 import { applyMemoryDelta, decayAndPrune } from "../../lib/memoryGraph";
 import { streamRoundtable } from "../../lib/roundtableStream";
 import { CharacterChip } from "./AvatarChips";
@@ -203,8 +203,11 @@ export function RoundtablePanel({
   };
 
   const handleSend = async (rawText?: string) => {
-    const text = (rawText ?? inputText).trim();
-    if (!text || isRunning || !seatedFull) return;
+    const raw = (rawText ?? inputText).trim();
+    if (!raw || isRunning || !seatedFull) return;
+
+    const { targetId, cleanedText } = parseMention(raw, seated);
+    const text = targetId ? cleanedText : raw;
 
     setErrorText(null);
     setShowRoster(false);
@@ -213,9 +216,12 @@ export function RoundtablePanel({
     routerRef.current = {};
     const roundStartIso = new Date().toISOString();
 
-    setEntries((current) => [...current, { kind: "user", id: `user-${roundStartIso}`, text, timestamp: roundStartIso }]);
+    setEntries((current) => [
+      ...current,
+      { kind: "user", id: `user-${roundStartIso}`, text, targetCharacterId: targetId, timestamp: roundStartIso },
+    ]);
     setIsRunning(true);
-    setLive({ phase: "routing" });
+    setLive(targetId ? { phase: "speaking", speaker: targetId } : { phase: "routing" });
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -230,7 +236,8 @@ export function RoundtablePanel({
           customApiKey: customApiKey || undefined,
           selectedModel,
           responseLength: "medium",
-          maxTurns: MAX_TURNS,
+          maxTurns: targetId ? 1 : MAX_TURNS,
+          targetCharacterId: targetId,
         },
         (event) => handleEvent(event, roundStartIso),
         controller.signal,
@@ -382,7 +389,11 @@ export function RoundtablePanel({
               }
             }}
             rows={2}
-            placeholder={mode === "pitch" ? "Pitch the panel your idea…" : "Bring your decision to the board…"}
+            placeholder={
+              mode === "pitch"
+                ? "Pitch the panel your idea… or type @name to ask one judge directly"
+                : "Bring your decision to the board… or type @name to ask one member directly"
+            }
             disabled={isRunning}
             className="flex-1 resize-none font-sans text-[15px] bg-white border-[2.5px] border-[#1e1b18] sketch-border-2 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-stone-400 disabled:opacity-60"
           />

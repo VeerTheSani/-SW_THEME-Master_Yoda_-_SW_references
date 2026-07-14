@@ -175,6 +175,34 @@ export function getCharacter(id: CharacterId): CharacterConfig {
   return CHARACTERS[id];
 }
 
+/**
+ * Parses a leading/embedded "@name" out of a message so the user can address
+ * one seated character directly instead of triggering a full table round.
+ * Matches short names case-insensitively (e.g. "@dinn", "@Anna"). Only looks
+ * at characters currently seated — mentioning someone not at the table is
+ * left as plain text.
+ */
+export function parseMention(
+  text: string,
+  seatedIds: CharacterId[],
+): { targetId: CharacterId | null; cleanedText: string } {
+  const match = text.match(/@([a-zA-Z][a-zA-Z-]*)/);
+  if (!match) return { targetId: null, cleanedText: text };
+
+  const needle = match[1].toLowerCase();
+  const targetId = seatedIds.find((id) => {
+    const config = CHARACTERS[id];
+    return (
+      config.shortName.toLowerCase().replace(/[^a-z]/g, "").startsWith(needle) ||
+      config.id.toLowerCase().startsWith(needle)
+    );
+  });
+  if (!targetId) return { targetId: null, cleanedText: text };
+
+  const cleanedText = (text.slice(0, match.index) + text.slice((match.index ?? 0) + match[0].length)).trim();
+  return { targetId, cleanedText: cleanedText || text };
+}
+
 export function charNodeId(id: CharacterId): string {
   return `char:${id}`;
 }
