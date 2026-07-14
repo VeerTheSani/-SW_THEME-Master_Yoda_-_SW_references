@@ -1485,35 +1485,77 @@ export default function App() {
           {/* Row 2: API Provider — one explicit toggle, no ambiguous shared fields */}
           <div className={`mt-5 pt-4 border-t-2 ${isUnhinged ? "border-rose-950/40" : "border-stone-900/10"}`}>
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <div className={`flex items-center gap-1.5 ${isUnhinged ? "text-rose-300" : "text-stone-800"}`}>
-                <Key className="w-4 h-4 text-stone-600" />
-                <span className="text-xs font-mono font-bold">API Provider</span>
-                <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border-2 font-bold ${
-                  customProviderMode
-                    ? "border-amber-600 bg-amber-100 text-amber-800"
-                    : "border-emerald-600 bg-emerald-100 text-emerald-800"
-                }`}>
-                  {customProviderMode ? "● CUSTOM PROVIDER ACTIVE" : "● GOOGLE AI STUDIO (DIRECT)"}
-                </span>
+              <div className="space-y-0.5">
+                <label className={`text-xs font-mono font-bold uppercase tracking-wide flex items-center gap-1.5 ${isUnhinged ? "text-rose-400" : "text-stone-600"}`}>
+                  <Key className="w-4 h-4" />
+                  5. Transmission Power Source
+                </label>
+                <p className={`text-[10px] font-mono ${isUnhinged ? "text-rose-500/70" : "text-stone-400"}`}>
+                  Where every reply is generated — the official channel, or your own relay.
+                </p>
               </div>
+
+              {/* The switch: a two-position sketch lever. The knob slides between sockets. */}
               <button
                 type="button"
                 onClick={handleToggleCustomProviderMode}
-                className={`self-start md:self-auto px-3 py-1.5 rounded-lg text-xs font-mono font-bold border-2 sketch-btn-press transition-all cursor-pointer ${isUnhinged ? "border-rose-600" : "border-[#1e1b18]"} ${
-                  customProviderMode
-                    ? (isUnhinged ? "bg-[#181011] text-rose-300" : "bg-white text-stone-600")
-                    : (isUnhinged ? "bg-rose-600 text-white shadow-[2px_2px_0px_0px_#ef4444]" : "bg-[#1e1b18] text-white shadow-[2px_2px_0px_0px_#1e1b18]")
+                aria-pressed={customProviderMode}
+                title={customProviderMode ? "Switch back to Google AI Studio" : "Switch to your own relay (OpenRouter, local gateway…)"}
+                className={`relative self-start md:self-auto flex items-stretch border-[2.5px] overflow-hidden sketch-btn-press cursor-pointer rounded-[14px_9px_16px_10px/11px_15px_9px_14px] ${
+                  isUnhinged ? "border-rose-600 bg-[#181011] shadow-[3px_3px_0px_0px_#e11d48]" : "border-[#1e1b18] bg-white shadow-[3px_3px_0px_0px_#1e1b18]"
                 }`}
               >
-                {customProviderMode ? "Switch back to Google AI Studio" : "Use a custom provider instead (OpenRouter, etc.)"}
+                <span className={`relative flex items-center gap-1.5 px-3 py-2 text-[10.5px] font-mono font-bold uppercase tracking-wide transition-colors duration-300 ${
+                  !customProviderMode
+                    ? (isUnhinged ? "text-emerald-200" : "text-emerald-900")
+                    : (isUnhinged ? "text-stone-600" : "text-stone-400")
+                }`}>
+                  {!customProviderMode && (
+                    <motion.span
+                      layoutId="power-source-socket"
+                      className={`absolute inset-0 ${isUnhinged ? "bg-emerald-900/50" : "bg-emerald-200"}`}
+                      transition={{ type: "spring", stiffness: 480, damping: 34 }}
+                    />
+                  )}
+                  {!customProviderMode && (
+                    <motion.span
+                      layoutId="power-source-knob"
+                      className={`relative w-2.5 h-2.5 rounded-full border-2 ${isUnhinged ? "bg-emerald-300 border-emerald-100" : "bg-white border-[#1e1b18] shadow-[1px_1px_0px_0px_#1e1b18]"}`}
+                      transition={{ type: "spring", stiffness: 480, damping: 34 }}
+                    />
+                  )}
+                  <span className="relative">🛰 Google direct</span>
+                </span>
+                <span className={`w-[2.5px] ${isUnhinged ? "bg-rose-600" : "bg-[#1e1b18]"}`} />
+                <span className={`relative flex items-center gap-1.5 px-3 py-2 text-[10.5px] font-mono font-bold uppercase tracking-wide transition-colors duration-300 ${
+                  customProviderMode
+                    ? (isUnhinged ? "text-amber-200" : "text-amber-900")
+                    : (isUnhinged ? "text-stone-600" : "text-stone-400")
+                }`}>
+                  {customProviderMode && (
+                    <motion.span
+                      layoutId="power-source-socket"
+                      className={`absolute inset-0 ${isUnhinged ? "bg-amber-900/50" : "bg-amber-200"}`}
+                      transition={{ type: "spring", stiffness: 480, damping: 34 }}
+                    />
+                  )}
+                  {customProviderMode && (
+                    <motion.span
+                      layoutId="power-source-knob"
+                      className={`relative w-2.5 h-2.5 rounded-full border-2 ${isUnhinged ? "bg-amber-300 border-amber-100" : "bg-white border-[#1e1b18] shadow-[1px_1px_0px_0px_#1e1b18]"}`}
+                      transition={{ type: "spring", stiffness: 480, damping: 34 }}
+                    />
+                  )}
+                  <span className="relative">📡 Smuggler's uplink</span>
+                </span>
               </button>
             </div>
 
             {!customProviderMode ? (
-              // Google AI Studio mode — the original key field, unchanged.
+              // Google direct — the official channel, key optional.
               <div className="mt-3 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="flex-1 max-w-lg space-y-1">
-                  <span className="text-xs font-mono font-bold">Custom Google AI Studio Key (Optional)</span>
+                  <span className={`text-xs font-mono font-bold ${isUnhinged ? "text-rose-300" : "text-stone-800"}`}>Custom Google AI Studio key (optional)</span>
                   <p className={`text-[10px] ${isUnhinged ? "text-rose-400" : "text-stone-500"} leading-relaxed font-sans font-medium`}>
                     Save your own custom Google key privately inside your browser storage for unlimited hand-drawn transmissions! Key remains server-secured.
                   </p>
@@ -1530,64 +1572,96 @@ export default function App() {
                     type="button"
                     onClick={() => setShowApiKey(!showApiKey)}
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-stone-500 hover:text-stone-800 transition-colors cursor-pointer border-0 bg-transparent"
-                    title={showApiKey ? "Hide Key" : "Show Key"}
+                    title={showApiKey ? "Hide key" : "Show key"}
                   >
                     {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                   </button>
                 </div>
               </div>
             ) : (
-              // Custom provider mode — all three fields grouped in one obvious card.
-              <div className={`mt-3 p-4 rounded-xl border-2 border-dashed space-y-3 ${isUnhinged ? "border-rose-600 bg-[#180a0c]" : "border-amber-600 bg-amber-50"}`}>
-                <p className={`text-[10px] ${isUnhinged ? "text-rose-400" : "text-stone-600"} leading-relaxed font-sans font-medium`}>
-                  Every request (single chat and The Roundtable) now goes to <strong>your</strong> endpoint instead of Google. Fill in all three fields below.
-                </p>
-                <div>
-                  <label className="text-[10px] font-mono font-bold uppercase tracking-wide text-stone-600">1. Base URL (required)</label>
-                  <input
-                    type="text"
-                    value={providerBaseUrl}
-                    onChange={(e) => handleProviderBaseUrlChange(e.target.value)}
-                    placeholder="Type it — e.g. https://openrouter.ai/api/v1"
-                    className={`mt-1 w-full ${isUnhinged ? "bg-[#181011] text-rose-100 border-rose-600 focus:ring-[#f43f5e]" : "bg-white border-[#1e1b18] text-[#1e1b18] focus:ring-amber-500"} border-2 text-xs font-mono rounded-lg px-3 py-2 outline-none placeholder:italic placeholder:text-stone-400 transition-all font-bold`}
-                  />
-                  {!providerBaseUrl && (
-                    <p className="mt-1 text-[10px] font-mono text-amber-700">↑ Empty — still using Google until you type a real URL here.</p>
-                  )}
+              // Smuggler's uplink — your own relay's manifest: URL, key, model, together.
+              <motion.div
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`relative mt-4 p-4 sm:p-5 border-[2.5px] border-dashed -rotate-[0.35deg] rounded-[18px_10px_20px_12px/12px_18px_10px_20px] overflow-hidden ${
+                  isUnhinged
+                    ? "border-rose-600 bg-[#1c0f11] shadow-[4px_4px_0px_0px_#e11d48]"
+                    : "border-amber-700 bg-[#fdf3dc] shadow-[4px_4px_0px_0px_#d97706]"
+                }`}
+              >
+                <div className="halftone-dots absolute inset-0 opacity-20 pointer-events-none" />
+                <span className={`absolute right-3 top-3 rotate-[7deg] select-none font-display text-[10px] uppercase tracking-[0.15em] px-2 py-0.5 border-[2.5px] rounded-[8px_3px_10px_4px] ${
+                  isUnhinged ? "border-rose-500 text-rose-400" : "border-amber-700 text-amber-700"
+                } opacity-80`}>
+                  Off-grid
+                </span>
+
+                <div className="relative space-y-3.5">
+                  <div>
+                    <div className={`font-display text-[11px] uppercase tracking-[0.2em] ${isUnhinged ? "text-rose-300" : "text-amber-800"}`}>
+                      📡 Smuggler's uplink · manifest
+                    </div>
+                    <p className={`mt-1 text-[10.5px] ${isUnhinged ? "text-rose-400" : "text-stone-600"} leading-relaxed font-sans font-medium max-w-xl`}>
+                      Every transmission — single chat and The Roundtable — reroutes through your own OpenAI-compatible relay
+                      (OpenRouter, a local gateway…). Google is bypassed entirely.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className={`text-[10px] font-mono font-bold uppercase tracking-wide ${isUnhinged ? "text-rose-300" : "text-amber-900"}`}>Base URL</label>
+                    <input
+                      type="text"
+                      value={providerBaseUrl}
+                      onChange={(e) => handleProviderBaseUrlChange(e.target.value)}
+                      placeholder="https://openrouter.ai/api/v1"
+                      className={`mt-1 w-full ${isUnhinged ? "bg-[#181011] text-rose-100 border-rose-600 focus:ring-[#f43f5e]" : "bg-white border-[#1e1b18] text-[#1e1b18] focus:ring-amber-500 shadow-[2px_2px_0px_0px_#1e1b18]"} border-2 text-xs font-mono rounded-lg px-3 py-2 outline-none placeholder:italic placeholder:text-stone-400 transition-all font-bold`}
+                    />
+                    {!providerBaseUrl && (
+                      <p className={`mt-1 text-[10.5px] font-mono italic ${isUnhinged ? "text-rose-400" : "text-amber-800"}`}>
+                        ↑ empty — transmissions still route through Google until a relay address is entered.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    <div className="relative">
+                      <label className={`text-[10px] font-mono font-bold uppercase tracking-wide ${isUnhinged ? "text-rose-300" : "text-amber-900"}`}>API key</label>
+                      <input
+                        type={showApiKey ? "text" : "password"}
+                        value={customApiKey}
+                        onChange={(e) => handleApiKeyChange(e.target.value)}
+                        placeholder="sk-or-v1-..."
+                        className={`mt-1 w-full ${isUnhinged ? "bg-[#181011] text-rose-100 border-rose-600 focus:ring-[#f43f5e]" : "bg-white border-[#1e1b18] text-[#1e1b18] focus:ring-amber-500 shadow-[2px_2px_0px_0px_#1e1b18]"} border-2 text-xs font-mono rounded-lg pl-3 pr-9 py-2 outline-none placeholder:italic placeholder:text-stone-400 transition-all font-bold`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowApiKey(!showApiKey)}
+                        className="absolute right-2.5 top-[27px] p-0.5 text-stone-500 hover:text-stone-800 transition-colors cursor-pointer border-0 bg-transparent"
+                        title={showApiKey ? "Hide key" : "Show key"}
+                      >
+                        {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+
+                    <div>
+                      <label className={`text-[10px] font-mono font-bold uppercase tracking-wide ${isUnhinged ? "text-rose-300" : "text-amber-900"}`}>Model name</label>
+                      <input
+                        type="text"
+                        value={selectedModel}
+                        onChange={(e) => {
+                          setSelectedModel(e.target.value);
+                          syncActiveStateToSessionsList({ selectedModel: e.target.value });
+                        }}
+                        placeholder="google/gemini-2.5-flash"
+                        className={`mt-1 w-full ${isUnhinged ? "bg-[#181011] text-rose-100 border-rose-600 focus:ring-[#f43f5e]" : "bg-white border-[#1e1b18] text-[#1e1b18] focus:ring-amber-500 shadow-[2px_2px_0px_0px_#1e1b18]"} border-2 text-xs font-mono rounded-lg px-3 py-2 outline-none placeholder:italic placeholder:text-stone-400 transition-all font-bold`}
+                      />
+                      <p className={`mt-1 text-[10px] font-mono ${isUnhinged ? "text-rose-500/70" : "text-stone-500"}`}>
+                        Sent exactly as typed — use your provider's catalog id.
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <div className="relative">
-                  <label className="text-[10px] font-mono font-bold uppercase tracking-wide text-stone-600">2. Provider API Key</label>
-                  <input
-                    type={showApiKey ? "text" : "password"}
-                    value={customApiKey}
-                    onChange={(e) => handleApiKeyChange(e.target.value)}
-                    placeholder="Type it — e.g. sk-or-v1-..."
-                    className={`mt-1 w-full ${isUnhinged ? "bg-[#181011] text-rose-100 border-rose-600 focus:ring-[#f43f5e]" : "bg-white border-[#1e1b18] text-[#1e1b18] focus:ring-amber-500"} border-2 text-xs font-mono rounded-lg pl-3 pr-9 py-2 outline-none placeholder:italic placeholder:text-stone-400 transition-all font-bold`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    className="absolute right-2.5 top-[26px] p-0.5 text-stone-500 hover:text-stone-800 transition-colors cursor-pointer border-0 bg-transparent"
-                    title={showApiKey ? "Hide Key" : "Show Key"}
-                  >
-                    {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-                <div>
-                  <label className="text-[10px] font-mono font-bold uppercase tracking-wide text-stone-600">3. Model Name (required)</label>
-                  <input
-                    type="text"
-                    value={selectedModel}
-                    onChange={(e) => {
-                      setSelectedModel(e.target.value);
-                      syncActiveStateToSessionsList({ selectedModel: e.target.value });
-                    }}
-                    placeholder="Type it — e.g. google/gemini-2.5-flash or anthropic/claude-sonnet-4.5"
-                    className={`mt-1 w-full ${isUnhinged ? "bg-[#181011] text-rose-100 border-rose-600 focus:ring-[#f43f5e]" : "bg-white border-[#1e1b18] text-[#1e1b18] focus:ring-amber-500"} border-2 text-xs font-mono rounded-lg px-3 py-2 outline-none placeholder:italic placeholder:text-stone-400 transition-all font-bold`}
-                  />
-                  <p className="mt-1 text-[10px] font-mono text-stone-500">Whatever id your provider's catalog uses — sent as-is, no allowlist.</p>
-                </div>
-              </div>
+              </motion.div>
             )}
           </div>
         </section>
