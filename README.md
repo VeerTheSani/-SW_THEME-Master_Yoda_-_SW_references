@@ -3,7 +3,7 @@
 A Star Wars–themed LLM playground with two experiences:
 
 1. **Single Chat** — talk to Master Yoda or Darth Ragebaiter across three modes (`roast`, `translate`, `wisdom`), with a Light/Dark ("unhinged") tone switch, TTS, and synthesized SFX.
-2. **The Roundtable** — seat 3 of 5 personas (Yoda, Ragebaiter, Chancellor Palpaccio, AN-LYT "Anna", Dinn Korr) at a table in **Boardroom** or **Pitch** mode. A router agent picks who speaks, each turn is a structured LLM call that also emits a memory delta, and a synthesis agent closes the round with a decision or verdict. Every character keeps its own persistent knowledge graph (beliefs, relationships, stances) that carries across sessions.
+2. **The Roundtable** — seat 3 of 5 personas (Yoda, Ragebaiter, Chancellor Palpaccio, AN-LYT "Anna", Dinn Korr) at a table in **Boardroom** or **Pitch** mode. A master-admin agent on a fast model (`gemini-3.1-flash-lite`) reads each user message and hands the floor to one or several characters; each turn is a structured LLM call that also emits a memory delta, and when the admin judges the debate settled it closes the round with a synthesized decision or verdict. Every character keeps its own persistent knowledge graph (beliefs, relationships, stances) that carries across sessions.
 
 Live demo target: React 19 SPA (Vite) + FastAPI backend, Firebase Auth/Firestore for cloud sync, Google Gemini as the default model provider with pluggable OpenAI-compatible providers (OpenRouter, local gateways, etc).
 
@@ -27,7 +27,7 @@ Live demo target: React 19 SPA (Vite) + FastAPI backend, Firebase Auth/Firestore
 ## Features
 
 - **Two chat personas**, each with roast / translate / wisdom modes and a "dark side" unhinged toggle that swaps the whole prompt + UI theme.
-- **The Roundtable**: 3-seat multi-agent debate, NDJSON-streamed turn-by-turn (`round_start` → `router_decision` → `turn_start` → `memory_recall` → `turn_complete` → … → `round_synthesis` → `round_end`).
+- **The Roundtable**: 3-seat multi-agent debate. Per user message the master admin picks 1–3 responders — replying sequentially (reacting to each other) or in parallel (UI toggle) — and decides whether to close the round. NDJSON-streamed turn-by-turn (`round_start` → `router_decision` → `turn_start` → `memory_recall` → `turn_complete` → … → `round_synthesis` → `round_end`).
 - **`@name` direct reply** — addressing one seated character by name (`@dinn ...`) skips the router/synthesis loop entirely for a single one-off reply.
 - **Per-character graph memory** — nodes (`character` / `concept` / `project` / `event` / `belief`) and typed edges with stance/salience, recalled deterministically per turn (salience + recency + keyword overlap, no extra LLM call) and rendered into that character's system prompt in first person.
 - **Bring-your-own-provider** — point every call at any OpenAI-compatible `/chat/completions` endpoint (OpenRouter, a local gateway, etc.) via a custom base URL + API key, bypassing Gemini entirely.
@@ -150,26 +150,29 @@ Multi-character round, streamed as **NDJSON** (`application/x-ndjson`, one JSON 
 {
   "text": "should we rewrite the backend in Rust?", "mode": "boardroom",
   "participants": [{ "characterId": "yoda", "memory": { "characterId","version","nodes","edges" } }, /* x3 */],
-  "history": [{"id","sender","text"}], "maxTurns": 8,
-  "targetCharacterId": null   // set to bypass the router for a single @name reply
+  "history": [{"id","sender","text"}],
+  "parallelReplies": false,   // true: chosen speakers reply concurrently, blind to each other
+  "targetCharacterId": null   // set to bypass the admin for a single @name reply
 }
 ```
+
+One master-admin call per user message (on `gemini-3.1-flash-lite`; the user-selected model with a custom provider) decides which 1–3 seated characters respond, their directives, and whether to close the round — closing is only allowed once the transcript holds ≥3 character turns.
 
 Event stream, in order:
 
 | Event | Payload |
 |---|---|
-| `round_start` | `mode`, `participants`, `maxTurns` |
-| `router_decision` | `action: "speak"\|"end_round"`, `next_speaker`, `directive`, `reasoning` |
+| `round_start` | `mode`, `participants`, `maxTurns` (= number of admin-chosen turns) |
+| `router_decision` | one per chosen speaker — `next_speaker`, `directive`, admin `reasoning` on the first |
 | `turn_start` | `speaker`, `turnIndex`, `directive` |
 | `memory_recall` | `speaker`, recalled `nodeIds`/`nodeLabels` for that turn |
 | `turn_complete` | `innerThought` (hidden), `publicReply`, `stanceScore`, `memoryDelta` |
 | `turn_error` | LLM call failed this turn — `fallbackReply` used instead |
-| `round_synthesis` | Boardroom `decision`/`rationale`/`actionItems`/`dissent`, or Pitch `verdict`/`scorecard`/`summary` |
+| `round_synthesis` | only when the admin closes the round — Boardroom `decision`/`rationale`/`actionItems`/`dissent`, or Pitch `verdict`/`scorecard`/`summary` |
 | `round_end` | `turnsTaken` |
 | `error` | Unrecoverable stream-level failure |
 
-Exactly 3 distinct, known character IDs must be seated; `maxTurns` is clamped server-side to `[3, 10]`.
+Exactly 3 distinct, known character IDs must be seated. In parallel mode each character call carries a 90s hard timeout so one stalled request can't dead-air the stream.
 
 ## Known constraints
 
