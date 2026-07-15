@@ -2,9 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from app.api.endpoints import router as api_router
-
+# Load .env BEFORE importing app modules — anything they read at import time
+# (feature flags, keys) must already be in the environment.
 load_dotenv()
+
+from app.api.endpoints import router as api_router  # noqa: E402
 
 app = FastAPI(title="Master Yoda & Ragebaiter Backend")
 
