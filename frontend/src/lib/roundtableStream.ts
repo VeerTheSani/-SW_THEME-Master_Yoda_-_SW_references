@@ -24,6 +24,10 @@ export interface RoundtableRequestBody {
   targetCharacterId?: CharacterId | null;
   parallelReplies?: boolean;
   scorekeeperEnabled?: boolean;
+  // Separate moderator/Adjudicator brain — active when moderatorModel is set.
+  moderatorProviderBaseUrl?: string;
+  moderatorApiKey?: string;
+  moderatorModel?: string;
 }
 
 export async function streamRoundtable(

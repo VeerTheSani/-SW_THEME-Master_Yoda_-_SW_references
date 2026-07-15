@@ -1566,6 +1566,14 @@ export default function App() {
                       {providerBaseUrl || "⚠ no relay URL configured"}
                     </span>
                   )}
+                  {resolveModeratorOverride(providerConfig) && (
+                    <span
+                      className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border-2 border-sky-600 bg-sky-100 text-sky-800 max-w-[220px] truncate"
+                      title="The Roundtable's moderator + Adjudicator run on their own brain"
+                    >
+                      ⚖ mod: {resolveModeratorOverride(providerConfig)?.model}
+                    </span>
+                  )}
                 </div>
               </div>
               <button
