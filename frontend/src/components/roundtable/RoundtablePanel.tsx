@@ -43,6 +43,8 @@ interface RoundtablePanelProps {
   customApiKey: string;
   providerBaseUrl?: string;
   selectedModel: string;
+  // Separate backstage brain (moderator + Adjudicator) — null = same as main.
+  moderatorOverride?: { url: string; key: string; model: string } | null;
   memories: Record<CharacterId, CharacterMemoryGraph>;
   onMemoriesChange: (next: Record<CharacterId, CharacterMemoryGraph>) => void;
   initialSession?: RoundtableSession | null;
@@ -60,6 +62,7 @@ export function RoundtablePanel({
   customApiKey,
   providerBaseUrl,
   selectedModel,
+  moderatorOverride,
   memories,
   onMemoriesChange,
   initialSession,
@@ -276,6 +279,9 @@ export function RoundtablePanel({
           targetCharacterId: targetId,
           parallelReplies,
           scorekeeperEnabled,
+          moderatorProviderBaseUrl: moderatorOverride?.url || undefined,
+          moderatorApiKey: moderatorOverride?.key || undefined,
+          moderatorModel: moderatorOverride?.model || undefined,
         },
         (event) => handleEvent(event, roundStartIso),
         controller.signal,

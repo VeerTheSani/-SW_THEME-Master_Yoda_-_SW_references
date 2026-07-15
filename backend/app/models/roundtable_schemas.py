@@ -186,6 +186,11 @@ class RoundtableRequest(BaseModel):
     targetCharacterId: Optional[str] = None  # set via @name — bypasses the admin for one direct reply
     parallelReplies: bool = False  # multiple chosen speakers reply independently (concurrent) instead of one-by-one
     scorekeeperEnabled: bool = False  # opt-in: an independent Adjudicator scores every reply after it lands
+    # Optional separate brain for the moderator + Adjudicator (backstage calls).
+    # Active when moderatorModel is set; unset = same provider as the characters.
+    moderatorProviderBaseUrl: Optional[str] = None
+    moderatorApiKey: Optional[str] = None
+    moderatorModel: Optional[str] = None
 
     class Config:
         extra = "ignore"

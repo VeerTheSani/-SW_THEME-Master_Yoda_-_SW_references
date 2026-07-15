@@ -248,14 +248,25 @@ async def roundtable_generate(req: RoundtableRequest):
     if not provider_base_url and not is_plausible_google_model(model_name):
         model_name = "gemini-2.5-flash"
 
+    # Optional separate moderator/Adjudicator brain — same SSRF + key-exfiltration
+    # rules as the main provider. Active only when a moderator model is named.
+    moderator = None
+    moderator_model = (req.moderatorModel or "").strip()
+    if moderator_model:
+        moderator_base_url = validate_relay_url(req.moderatorProviderBaseUrl)
+        if not moderator_base_url and not is_plausible_google_model(moderator_model):
+            moderator_model = "gemini-3.1-flash-lite"
+        moderator_key = resolve_api_key(req.moderatorApiKey, moderator_base_url)
+        moderator = (moderator_base_url, moderator_key, moderator_model)
+
     # 3. Pick the pipeline: a direct @name reply, an admin-planned exchange, or the keyless scripted demo.
     is_offline = is_default_key_unconfigured and not req.customApiKey
     if req.targetCharacterId:
-        generator = run_offline_direct_reply(req) if is_offline else run_direct_reply(req, api_key, model_name)
+        generator = run_offline_direct_reply(req) if is_offline else run_direct_reply(req, api_key, model_name, moderator)
     elif is_offline:
         generator = run_offline_roundtable(req)
     else:
-        generator = run_admin_roundtable(req, api_key, model_name)
+        generator = run_admin_roundtable(req, api_key, model_name, moderator)
 
     async def ndjson_stream():
         try:

@@ -6,7 +6,7 @@ import YodaGlobe from "./components/YodaGlobe";
 import InputArea from "./components/InputArea";
 import ChatHistory from "./components/ChatHistory";
 import { RoundtablePanel } from "./components/roundtable/RoundtablePanel";
-import { ConfigMenu, PROVIDER_CONFIG_KEY, ProviderConfig, defaultProviderConfig } from "./components/ConfigMenu";
+import { ConfigMenu, PROVIDER_CONFIG_KEY, ProviderConfig, defaultProviderConfig, resolveModeratorOverride } from "./components/ConfigMenu";
 import { CHARACTER_ORDER } from "./lib/characters";
 import { GOOGLE_MODEL_OPTIONS } from "./lib/googleModels";
 import { loadGuestMemory, saveGuestMemory } from "./lib/memoryGraph";
@@ -1904,6 +1904,7 @@ export default function App() {
                 customApiKey={customApiKey}
                 providerBaseUrl={providerBaseUrl}
                 selectedModel={selectedModel}
+                moderatorOverride={resolveModeratorOverride(providerConfig)}
                 memories={characterMemories}
                 onMemoriesChange={handleMemoriesChange}
                 initialSession={roundtableSession}

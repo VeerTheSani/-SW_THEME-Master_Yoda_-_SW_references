@@ -47,7 +47,17 @@ _OFFLINE_GRADES = [
 ]
 
 
-async def _adjudicate(caller, admin_model: str, chat_model: str, mode: str,
+def _admin_setup(caller, model_name: str, provider_base_url, moderator) -> Tuple[object, str]:
+    """The moderator + Adjudicator brain: a separate provider when the user
+    configured one, otherwise the main caller (fast ADMIN_MODEL on Google,
+    the chat model on a custom relay whose catalog we can't assume)."""
+    if moderator:
+        mod_url, mod_key, mod_model = moderator
+        return make_caller(mod_key, mod_model, mod_url), mod_model
+    return caller, (model_name if provider_base_url else ADMIN_MODEL)
+
+
+async def _adjudicate(admin_caller, admin_model: str, caller, chat_model: str, mode: str,
                       speaker: CharacterSpec, reply_text: str, transcript) -> dict | None:
     """One independent Adjudicator grade for one reply. Returns None on any
     failure — a missing score must never break the round."""
@@ -55,10 +65,11 @@ async def _adjudicate(caller, admin_model: str, chat_model: str, mode: str,
     try:
         try:
             graded = await asyncio.wait_for(
-                caller.json(system, user, TurnScore, SCOREKEEPER_TEMPERATURE, model=admin_model), timeout=45)
+                admin_caller.json(system, user, TurnScore, SCOREKEEPER_TEMPERATURE, model=admin_model), timeout=45)
         except Exception:
-            if admin_model == chat_model:
+            if admin_caller is caller and admin_model == chat_model:
                 raise
+            # The moderator brain may be down/unavailable — retry on the chat provider.
             graded = await asyncio.wait_for(
                 caller.json(system, user, TurnScore, SCOREKEEPER_TEMPERATURE), timeout=45)
     except Exception:
@@ -153,7 +164,7 @@ def _naive_synthesis(mode: str, seated: List[CharacterSpec], stance_scores: Dict
     }
 
 
-async def run_direct_reply(req: RoundtableRequest, api_key: str, model_name: str) -> AsyncIterator[dict]:
+async def run_direct_reply(req: RoundtableRequest, api_key: str, model_name: str, moderator=None) -> AsyncIterator[dict]:
     """@name targeting: exactly one character replies, no router, no synthesis, no loop."""
     seated = [get_character(p.characterId) for p in req.participants]
     memories = {p.characterId: p.memory for p in req.participants}
@@ -185,9 +196,9 @@ async def run_direct_reply(req: RoundtableRequest, api_key: str, model_name: str
             "stanceScore": turn.stance_score, "memoryDelta": delta.model_dump(), "isFallback": False,
         }}
         if req.scorekeeperEnabled:
-            admin_model = model_name if req.providerBaseUrl else ADMIN_MODEL
+            admin_caller, admin_model = _admin_setup(caller, model_name, req.providerBaseUrl, moderator)
             transcript.append((speaker.name, turn.public_reply))
-            graded = await _adjudicate(caller, admin_model, model_name, req.mode, speaker, turn.public_reply, transcript)
+            graded = await _adjudicate(admin_caller, admin_model, caller, model_name, req.mode, speaker, turn.public_reply, transcript)
             if graded:
                 yield {"event": "turn_score", "data": {"speaker": speaker.id, "turnIndex": 0, **graded}}
     except Exception as e:
@@ -200,7 +211,7 @@ async def run_direct_reply(req: RoundtableRequest, api_key: str, model_name: str
     yield {"event": "round_end", "data": {"turnsTaken": 1}}
 
 
-async def run_admin_roundtable(req: RoundtableRequest, api_key: str, model_name: str) -> AsyncIterator[dict]:
+async def run_admin_roundtable(req: RoundtableRequest, api_key: str, model_name: str, moderator=None) -> AsyncIterator[dict]:
     """One exchange: the master admin picks 1-3 responders (and possibly closes
     the round), the chosen characters speak — sequentially or in parallel —
     then control returns to the user."""
@@ -212,19 +223,19 @@ async def run_admin_roundtable(req: RoundtableRequest, api_key: str, model_name:
     stance_scores: Dict[str, float] = {}
 
     caller = make_caller(api_key, model_name, req.providerBaseUrl)  # one caller for the whole exchange
-    # Custom providers have arbitrary catalogs — reuse the user's model there.
-    admin_model = model_name if req.providerBaseUrl else ADMIN_MODEL
+    # Moderator + Adjudicator brain — a separate provider when configured.
+    admin_caller, admin_model = _admin_setup(caller, model_name, req.providerBaseUrl, moderator)
     allow_close = sum(spoken_counts.values()) >= MIN_TURNS_BEFORE_CLOSE
 
     # --- ADMIN: one decision — who answers, in what order, close or not ---
     try:
         system, user = build_admin_prompt(req.mode, seated, transcript, spoken_counts, allow_close)
         try:
-            decision = await caller.json(system, user, AdminDecision, ADMIN_TEMPERATURE, model=admin_model)
+            decision = await admin_caller.json(system, user, AdminDecision, ADMIN_TEMPERATURE, model=admin_model)
         except Exception:
-            if admin_model == model_name:
+            if admin_caller is caller and admin_model == model_name:
                 raise
-            # The fast admin model may be unavailable on this key — retry on the chat model.
+            # The moderator brain may be unavailable — retry on the chat provider/model.
             decision = await caller.json(system, user, AdminDecision, ADMIN_TEMPERATURE)
         plan, close_round, reasoning = _sanitize_admin_decision(decision, seated, spoken_counts, allow_close)
     except Exception:
@@ -291,7 +302,7 @@ async def run_admin_roundtable(req: RoundtableRequest, api_key: str, model_name:
                 yield complete_event(speaker, index, result)
                 transcript.append((speaker.name, result.public_reply))
                 if req.scorekeeperEnabled:
-                    graded = await _adjudicate(caller, admin_model, model_name, req.mode, speaker, result.public_reply, transcript)
+                    graded = await _adjudicate(admin_caller, admin_model, caller, model_name, req.mode, speaker, result.public_reply, transcript)
                     if graded:
                         yield {"event": "turn_score", "data": {"speaker": speaker.id, "turnIndex": index, **graded}}
             spoken_counts[speaker.id] += 1
@@ -312,7 +323,7 @@ async def run_admin_roundtable(req: RoundtableRequest, api_key: str, model_name:
                 yield complete_event(speaker, index, turn)
                 transcript.append((speaker.name, turn.public_reply))
                 if req.scorekeeperEnabled:
-                    graded = await _adjudicate(caller, admin_model, model_name, req.mode, speaker, turn.public_reply, transcript)
+                    graded = await _adjudicate(admin_caller, admin_model, caller, model_name, req.mode, speaker, turn.public_reply, transcript)
                     if graded:
                         yield {"event": "turn_score", "data": {"speaker": speaker.id, "turnIndex": index, **graded}}
             except Exception as e:

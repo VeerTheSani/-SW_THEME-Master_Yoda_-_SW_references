@@ -17,9 +17,18 @@ export interface ProviderConfig {
   relayUrl: string;
   relayKey: string;
   relayModel: string;
+  // The Roundtable's backstage brain (moderator + Adjudicator judge).
+  // "same" = whatever the main source is; or its own Google / relay setup.
+  moderatorSource: "same" | "google" | "custom";
+  moderatorGoogleKey: string;
+  moderatorGoogleModel: string;
+  moderatorRelayUrl: string;
+  moderatorRelayKey: string;
+  moderatorRelayModel: string;
 }
 
 export const PROVIDER_CONFIG_KEY = "yoda_provider_config_v1";
+export const DEFAULT_MODERATOR_GOOGLE_MODEL = "gemini-3.1-flash-lite";
 
 export function defaultProviderConfig(): ProviderConfig {
   return {
@@ -29,7 +38,33 @@ export function defaultProviderConfig(): ProviderConfig {
     relayUrl: "",
     relayKey: "",
     relayModel: "",
+    moderatorSource: "same",
+    moderatorGoogleKey: "",
+    moderatorGoogleModel: DEFAULT_MODERATOR_GOOGLE_MODEL,
+    moderatorRelayUrl: "",
+    moderatorRelayKey: "",
+    moderatorRelayModel: "",
   };
+}
+
+// Resolve what the Roundtable should send as the moderator override —
+// null means "same brain as the main provider" (backend default behavior).
+export function resolveModeratorOverride(config: ProviderConfig): { url: string; key: string; model: string } | null {
+  if (config.moderatorSource === "google") {
+    return {
+      url: "",
+      // Falls back to the main Google key, then the server's key (backend rule).
+      key: config.moderatorGoogleKey || config.googleKey,
+      model: config.moderatorGoogleModel.trim() || DEFAULT_MODERATOR_GOOGLE_MODEL,
+    };
+  }
+  if (config.moderatorSource === "custom") {
+    const url = config.moderatorRelayUrl.trim();
+    const model = config.moderatorRelayModel.trim();
+    if (!url || !model) return null; // incomplete — behave as "same"
+    return { url, key: config.moderatorRelayKey, model };
+  }
+  return null;
 }
 
 interface ConfigMenuProps {
@@ -40,7 +75,7 @@ interface ConfigMenuProps {
   onApply: (config: ProviderConfig) => void;
 }
 
-type Section = "google" | "custom";
+type Section = "google" | "custom" | "moderator";
 
 export function ConfigMenu({ open, initial, isUnhinged, onClose, onApply }: ConfigMenuProps) {
   const [draft, setDraft] = useState<ProviderConfig>(initial);
@@ -65,9 +100,10 @@ export function ConfigMenu({ open, initial, isUnhinged, onClose, onApply }: Conf
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(initial);
   const relayIncomplete = draft.source === "custom" && (!draft.relayUrl.trim() || !draft.relayModel.trim());
+  const moderatorIncomplete = draft.moderatorSource === "custom" && (!draft.moderatorRelayUrl.trim() || !draft.moderatorRelayModel.trim());
 
   const handleApply = () => {
-    if (relayIncomplete) return;
+    if (relayIncomplete || moderatorIncomplete) return;
     onApply(draft);
     setJustApplied(true);
     setTimeout(onClose, 700);
@@ -80,7 +116,7 @@ export function ConfigMenu({ open, initial, isUnhinged, onClose, onApply }: Conf
 
   const menuItem = (id: Section, icon: string, title: string, subtitle: string) => {
     const selected = section === id;
-    const isActiveSource = draft.source === id;
+    const isActiveSource = id === "moderator" ? draft.moderatorSource !== "same" : draft.source === id;
     return (
       <button
         key={id}
@@ -96,8 +132,10 @@ export function ConfigMenu({ open, initial, isUnhinged, onClose, onApply }: Conf
           <span>{icon} {title}</span>
           {isActiveSource && (
             <span className={`text-[8.5px] px-1.5 py-0.5 rounded-full border-2 ${
-              id === "google" ? "border-emerald-600 bg-emerald-100 text-emerald-800" : "border-amber-600 bg-amber-100 text-amber-800"
-            }`}>ACTIVE</span>
+              id === "google" ? "border-emerald-600 bg-emerald-100 text-emerald-800"
+                : id === "custom" ? "border-amber-600 bg-amber-100 text-amber-800"
+                  : "border-sky-600 bg-sky-100 text-sky-800"
+            }`}>{id === "moderator" ? "OWN BRAIN" : "ACTIVE"}</span>
           )}
         </div>
         <div className={`text-[9.5px] font-mono mt-0.5 ${isUnhinged ? "text-rose-500" : "text-stone-500"}`}>{subtitle}</div>
@@ -143,6 +181,7 @@ export function ConfigMenu({ open, initial, isUnhinged, onClose, onApply }: Conf
           <div className="space-y-2">
             {menuItem("google", "🛰", "Google AI Studio", "Direct to Gemini — the official channel")}
             {menuItem("custom", "📡", "Custom relay (proxy)", "OpenRouter or any OpenAI-compatible URL")}
+            {menuItem("moderator", "⚖", "Moderator & Judge", "The Roundtable's backstage brain")}
           </div>
 
           {/* Right pane: the selected section's settings */}
@@ -219,7 +258,7 @@ export function ConfigMenu({ open, initial, isUnhinged, onClose, onApply }: Conf
                   </p>
                 </div>
               </div>
-            ) : (
+            ) : section === "custom" ? (
               <div className="space-y-3.5">
                 <label className={`flex items-center gap-2 cursor-pointer ${isUnhinged ? "text-rose-200" : "text-stone-800"}`}>
                   <input
@@ -275,6 +314,109 @@ export function ConfigMenu({ open, initial, isUnhinged, onClose, onApply }: Conf
                   </p>
                 </div>
               </div>
+            ) : (
+              <div className="space-y-3.5">
+                <p className={`text-[10px] font-sans font-medium leading-relaxed ${isUnhinged ? "text-rose-400" : "text-stone-500"}`}>
+                  The Roundtable's backstage calls — the <b>moderator</b> who picks speakers and the <b>⚖ Adjudicator</b> who
+                  grades replies — can run on their own model or provider, separate from the characters.
+                </p>
+
+                {([
+                  ["same", "Same as the main power source", "Default — one brain runs everything"],
+                  ["google", "Google AI Studio", "A fast Gemini referees while characters run elsewhere"],
+                  ["custom", "Separate relay (proxy)", "Its own OpenAI-compatible endpoint"],
+                ] as const).map(([value, title, hint]) => (
+                  <label key={value} className={`flex items-start gap-2 cursor-pointer ${isUnhinged ? "text-rose-200" : "text-stone-800"}`}>
+                    <input
+                      type="radio"
+                      checked={draft.moderatorSource === value}
+                      onChange={() => setDraft({ ...draft, moderatorSource: value })}
+                      className="accent-sky-600 w-3.5 h-3.5 mt-0.5"
+                    />
+                    <span>
+                      <span className="block text-xs font-mono font-bold">{title}</span>
+                      <span className={`block text-[9.5px] font-mono ${isUnhinged ? "text-rose-500" : "text-stone-500"}`}>{hint}</span>
+                    </span>
+                  </label>
+                ))}
+
+                {draft.moderatorSource === "google" && (
+                  <>
+                    <div>
+                      <label className={label}>Google API key (optional — falls back to the main Google key, then the server's)</label>
+                      <div className="relative">
+                        <input
+                          type={showKey ? "text" : "password"}
+                          value={draft.moderatorGoogleKey}
+                          onChange={(e) => setDraft({ ...draft, moderatorGoogleKey: e.target.value })}
+                          placeholder="AIzaSy..."
+                          className={`${inputCls} pr-9`}
+                        />
+                        <button type="button" onClick={() => setShowKey(!showKey)} className="absolute right-2.5 top-1/2 -translate-y-1/2 mt-0.5 p-0.5 text-stone-500 hover:text-stone-800 border-0 bg-transparent cursor-pointer" title={showKey ? "Hide key" : "Show key"}>
+                          {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className={label}>Moderator model</label>
+                      <input
+                        type="text"
+                        value={draft.moderatorGoogleModel}
+                        onChange={(e) => setDraft({ ...draft, moderatorGoogleModel: e.target.value })}
+                        placeholder={DEFAULT_MODERATOR_GOOGLE_MODEL}
+                        className={inputCls}
+                      />
+                      <p className={`mt-1 text-[10px] font-mono ${isUnhinged ? "text-rose-500" : "text-stone-500"}`}>
+                        Small + fast is ideal — these are short structured calls.
+                      </p>
+                    </div>
+                  </>
+                )}
+
+                {draft.moderatorSource === "custom" && (
+                  <>
+                    <div>
+                      <label className={label}>Base URL</label>
+                      <input
+                        type="text"
+                        value={draft.moderatorRelayUrl}
+                        onChange={(e) => setDraft({ ...draft, moderatorRelayUrl: e.target.value })}
+                        placeholder="https://integrate.api.nvidia.com/v1"
+                        className={inputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className={label}>API key</label>
+                      <div className="relative">
+                        <input
+                          type={showKey ? "text" : "password"}
+                          value={draft.moderatorRelayKey}
+                          onChange={(e) => setDraft({ ...draft, moderatorRelayKey: e.target.value })}
+                          placeholder="nvapi-... / sk-or-v1-..."
+                          className={`${inputCls} pr-9`}
+                        />
+                        <button type="button" onClick={() => setShowKey(!showKey)} className="absolute right-2.5 top-1/2 -translate-y-1/2 mt-0.5 p-0.5 text-stone-500 hover:text-stone-800 border-0 bg-transparent cursor-pointer" title={showKey ? "Hide key" : "Show key"}>
+                          {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className={label}>Model name</label>
+                      <input
+                        type="text"
+                        value={draft.moderatorRelayModel}
+                        onChange={(e) => setDraft({ ...draft, moderatorRelayModel: e.target.value })}
+                        placeholder="meta/llama-3.1-8b-instruct"
+                        className={inputCls}
+                      />
+                    </div>
+                  </>
+                )}
+
+                <p className={`text-[10px] font-mono ${isUnhinged ? "text-rose-500" : "text-stone-500"}`}>
+                  Only affects the Roundtable. If this brain fails mid-round, the main provider takes over automatically.
+                </p>
+              </div>
             )}
           </div>
         </div>
@@ -284,9 +426,11 @@ export function ConfigMenu({ open, initial, isUnhinged, onClose, onApply }: Conf
           <div className={`text-[10px] font-mono ${isUnhinged ? "text-rose-500" : "text-stone-500"}`}>
             {relayIncomplete
               ? "⚠ The relay needs at least a Base URL and a model name."
-              : dirty
-                ? "Unsaved changes — nothing applies until you save."
-                : "No changes."}
+              : moderatorIncomplete
+                ? "⚠ The moderator's relay needs at least a Base URL and a model name."
+                : dirty
+                  ? "Unsaved changes — nothing applies until you save."
+                  : "No changes."}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -299,11 +443,11 @@ export function ConfigMenu({ open, initial, isUnhinged, onClose, onApply }: Conf
             <button
               type="button"
               onClick={handleApply}
-              disabled={!dirty || relayIncomplete || justApplied}
+              disabled={!dirty || relayIncomplete || moderatorIncomplete || justApplied}
               className={`flex items-center gap-1.5 px-4 py-2 border-[2.5px] ${ink} sketch-border-1 sketch-btn-press text-[11px] font-display uppercase tracking-wide transition-all ${
                 justApplied
                   ? "bg-emerald-500 text-white"
-                  : dirty && !relayIncomplete
+                  : dirty && !relayIncomplete && !moderatorIncomplete
                     ? (isUnhinged ? "bg-rose-600 text-white shadow-[3px_3px_0px_0px_#e11d48]" : "bg-[#1e1b18] text-[#f7f4eb] sketch-shadow-sm")
                     : "bg-stone-200 text-stone-400 cursor-not-allowed"
               }`}
