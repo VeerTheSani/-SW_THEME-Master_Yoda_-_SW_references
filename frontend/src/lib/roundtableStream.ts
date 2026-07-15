@@ -23,6 +23,7 @@ export interface RoundtableRequestBody {
   maxTurns?: number;
   targetCharacterId?: CharacterId | null;
   parallelReplies?: boolean;
+  scorekeeperEnabled?: boolean;
 }
 
 export async function streamRoundtable(

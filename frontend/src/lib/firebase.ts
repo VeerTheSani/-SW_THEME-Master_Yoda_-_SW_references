@@ -244,6 +244,8 @@ function sanitizeRoundtableEntry(entry: RoundtableEntry): Record<string, any> {
       stanceScore: entry.stanceScore ?? null,
       recalledNodeLabels: entry.recalledNodeLabels ?? [],
       isFallback: !!entry.isFallback,
+      judgeScore: entry.judgeScore ?? null,
+      judgeVerdict: entry.judgeVerdict ?? null,
       timestamp: entry.timestamp
     };
   }
@@ -327,6 +329,8 @@ export async function dbLoadRoundtableSessions(userId: string): Promise<Roundtab
               stanceScore: entry.stanceScore ?? null,
               recalledNodeLabels: entry.recalledNodeLabels || [],
               isFallback: !!entry.isFallback,
+              judgeScore: entry.judgeScore ?? null,
+              judgeVerdict: entry.judgeVerdict ?? null,
               timestamp: entry.timestamp || ""
             };
           }

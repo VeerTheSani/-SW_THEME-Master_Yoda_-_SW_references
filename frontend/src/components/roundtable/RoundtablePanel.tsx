@@ -83,6 +83,17 @@ export function RoundtablePanel({
     setParallelReplies(parallel);
     localStorage.setItem("roundtable_parallel_replies", String(parallel));
   };
+  // The Adjudicator: an independent AI critic that grades every reply after it
+  // lands (-10..+10, negatives welcome). Opt-in — off by default.
+  const [scorekeeperEnabled, setScorekeeperEnabled] = useState(
+    () => localStorage.getItem("roundtable_scorekeeper") === "true",
+  );
+  const handleScorekeeperToggle = () => {
+    setScorekeeperEnabled((enabled: boolean) => {
+      localStorage.setItem("roundtable_scorekeeper", String(!enabled));
+      return !enabled;
+    });
+  };
 
   // Persist the table's minutes whenever they change (id stays stable).
   const sessionIdRef = useRef(initialSession?.id ?? `table-${Date.now()}`);
@@ -192,6 +203,19 @@ export function RoundtablePanel({
         setLive({ phase: "routing" });
         break;
       }
+      case "turn_score": {
+        // The Adjudicator's grade lands after its turn_complete — stamp it onto
+        // that turn's card (matched by this round's entry id).
+        const scoredId = `turn-${roundStartIso}-${event.data.turnIndex}`;
+        setEntries((current) =>
+          current.map((entry: RoundtableEntry) =>
+            entry.kind === "turn" && entry.id === scoredId && entry.speaker === event.data.speaker
+              ? { ...entry, judgeScore: event.data.score, judgeVerdict: event.data.verdict }
+              : entry,
+          ),
+        );
+        break;
+      }
       case "round_synthesis":
         setEntries((current) => [
           ...current,
@@ -251,6 +275,7 @@ export function RoundtablePanel({
           maxTurns: targetId ? 1 : MAX_TURNS,
           targetCharacterId: targetId,
           parallelReplies,
+          scorekeeperEnabled,
         },
         (event) => handleEvent(event, roundStartIso),
         controller.signal,
@@ -308,6 +333,20 @@ export function RoundtablePanel({
                 ⚡ All at once
               </button>
             </div>
+            {/* The Adjudicator: independent brutal scoring of every reply (opt-in) */}
+            <button
+              id="scorekeeper-toggle"
+              onClick={handleScorekeeperToggle}
+              disabled={isRunning}
+              className={`px-2.5 py-1.5 border-[2.5px] border-[#1e1b18] sketch-border-1 sketch-btn-press font-mono text-[11px] uppercase tracking-wide font-bold transition-all ${
+                scorekeeperEnabled ? "bg-rose-600 text-white shadow-[2px_2px_0px_0px_#1e1b18]" : "bg-white text-stone-500 hover:bg-stone-100"
+              } ${isRunning ? "opacity-50 cursor-not-allowed" : ""}`}
+              title={scorekeeperEnabled
+                ? "The Adjudicator is watching: an independent AI grades every reply from -10 to +10, brutally. Click to disable."
+                : "Enable the Adjudicator: an independent AI grades every reply from -10 to +10 — negatives included."}
+            >
+              ⚖ Judge {scorekeeperEnabled ? "ON" : "off"}
+            </button>
             {entries.length > 0 && (
               <button
                 onClick={() => {

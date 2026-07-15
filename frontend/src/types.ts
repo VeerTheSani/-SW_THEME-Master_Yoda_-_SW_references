@@ -105,6 +105,9 @@ export interface RoundtableTurnEntry {
   memoryDelta?: MemoryDelta;
   recalledNodeLabels?: string[];
   isFallback?: boolean;
+  // The Adjudicator (optional AI scorekeeper): independent post-reply grade.
+  judgeScore?: number | null;
+  judgeVerdict?: string | null;
   timestamp: string;
 }
 
@@ -151,6 +154,7 @@ export type RoundtableStreamEvent =
   | { event: "memory_recall"; data: { speaker: CharacterId; turnIndex: number; nodeIds: string[]; nodeLabels: string[] } }
   | { event: "turn_complete"; data: { speaker: CharacterId; turnIndex: number; innerThought: string; publicReply: string; stanceScore?: number | null; memoryDelta: MemoryDelta; isFallback: boolean } }
   | { event: "turn_error"; data: { speaker: CharacterId; turnIndex: number; message: string; fallbackReply: string; isFallback: true } }
+  | { event: "turn_score"; data: { speaker: CharacterId; turnIndex: number; score: number; verdict: string } }
   | { event: "round_synthesis"; data: BoardroomSynthesis | PitchSynthesis }
   | { event: "round_end"; data: { turnsTaken: number } }
   | { event: "error"; data: { message: string; recoverable?: boolean } };

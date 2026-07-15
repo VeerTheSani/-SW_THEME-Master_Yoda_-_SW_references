@@ -166,3 +166,33 @@ def build_synthesis_prompt(
         "Produce the JSON synthesis now."
     )
     return system, user
+
+
+def build_scorekeeper_prompt(
+    mode: str,
+    speaker: CharacterSpec,
+    reply_text: str,
+    transcript: List[Tuple[str, str]],
+) -> Tuple[str, str]:
+    """Returns (system_instruction, user_content) for the Adjudicator — an
+    independent, merciless critic that grades ONE reply after it lands."""
+    mode_spec = MODE_SPECS[mode]
+    system = (
+        f"You are THE ADJUDICATOR — an incorruptible, brutally honest critic observing this session.\n"
+        f"{mode_spec['scene']}\n\n"
+        "YOUR JOB: grade the LATEST reply on its actual substance, from -10 to +10.\n"
+        "GRADING LAW:\n"
+        "- Score the CONTENT: insight, specificity, relevance to the user's matter, intellectual courage.\n"
+        "- Character flavor/voice is expected — never reward or punish style, only substance under it.\n"
+        "- Be REALISTIC and TOUGH: an average remark earns -2..4. Reserve 7+ for genuinely sharp, "
+        "concrete, advance-the-debate contributions. Never inflate.\n"
+        "- Go NEGATIVE without hesitation: empty flattery, vague hedging, invented numbers, dodging the "
+        "question, repeating what was already said, or pure noise all earn below 0.\n"
+        "- The verdict is ONE specific sentence naming exactly what was weak or strong. No mercy, no filler."
+    )
+    user = (
+        f"TRANSCRIPT (for context):\n{format_transcript(transcript)}\n\n"
+        f"GRADE THIS REPLY by {speaker.name} ({speaker.id}):\n\"{reply_text}\"\n\n"
+        "Produce your JSON score now."
+    )
+    return system, user

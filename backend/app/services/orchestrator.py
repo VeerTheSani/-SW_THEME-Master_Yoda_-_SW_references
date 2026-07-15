@@ -17,6 +17,7 @@ from app.models.roundtable_schemas import (
     MemoryDelta,
     PitchSynthesis,
     RoundtableRequest,
+    TurnScore,
 )
 from app.services.characters import CharacterSpec, get_character
 from app.services.llm_service import make_caller
@@ -24,6 +25,7 @@ from app.services.memory import recall_subgraph, render_graph_for_prompt, saniti
 from app.services.roundtable_prompts import (
     build_admin_prompt,
     build_character_turn_prompt,
+    build_scorekeeper_prompt,
     build_synthesis_prompt,
 )
 
@@ -33,8 +35,38 @@ from app.services.roundtable_prompts import (
 ADMIN_MODEL = "gemini-3.1-flash-lite"
 ADMIN_TEMPERATURE = 0.3
 SYNTHESIS_TEMPERATURE = 0.5
+SCOREKEEPER_TEMPERATURE = 0.2
 # Character turns that must exist in the transcript before the admin may close.
 MIN_TURNS_BEFORE_CLOSE = 3
+
+# Canned Adjudicator grades for the keyless demo — brutal on purpose.
+_OFFLINE_GRADES = [
+    (-3.5, "Vague posturing — no numbers, no plan, nothing the table didn't already know."),
+    (2.0, "One real point buried under theatrics; barely advances the debate."),
+    (6.5, "Concrete and actionable — the first reply that actually moved the table forward."),
+]
+
+
+async def _adjudicate(caller, admin_model: str, chat_model: str, mode: str,
+                      speaker: CharacterSpec, reply_text: str, transcript) -> dict | None:
+    """One independent Adjudicator grade for one reply. Returns None on any
+    failure — a missing score must never break the round."""
+    system, user = build_scorekeeper_prompt(mode, speaker, reply_text, transcript)
+    try:
+        try:
+            graded = await asyncio.wait_for(
+                caller.json(system, user, TurnScore, SCOREKEEPER_TEMPERATURE, model=admin_model), timeout=45)
+        except Exception:
+            if admin_model == chat_model:
+                raise
+            graded = await asyncio.wait_for(
+                caller.json(system, user, TurnScore, SCOREKEEPER_TEMPERATURE), timeout=45)
+    except Exception:
+        return None
+    return {
+        "score": max(-10.0, min(10.0, graded.score)),
+        "verdict": (graded.verdict or "").strip()[:140],
+    }
 
 
 def _transcript_from_request(req: RoundtableRequest) -> List[Tuple[str, str]]:
@@ -152,6 +184,12 @@ async def run_direct_reply(req: RoundtableRequest, api_key: str, model_name: str
             "innerThought": turn.inner_thought, "publicReply": turn.public_reply,
             "stanceScore": turn.stance_score, "memoryDelta": delta.model_dump(), "isFallback": False,
         }}
+        if req.scorekeeperEnabled:
+            admin_model = model_name if req.providerBaseUrl else ADMIN_MODEL
+            transcript.append((speaker.name, turn.public_reply))
+            graded = await _adjudicate(caller, admin_model, model_name, req.mode, speaker, turn.public_reply, transcript)
+            if graded:
+                yield {"event": "turn_score", "data": {"speaker": speaker.id, "turnIndex": 0, **graded}}
     except Exception as e:
         lines = speaker.offline_lines.get(req.mode) or ["..."]
         yield {"event": "turn_error", "data": {
@@ -252,6 +290,10 @@ async def run_admin_roundtable(req: RoundtableRequest, api_key: str, model_name:
             else:
                 yield complete_event(speaker, index, result)
                 transcript.append((speaker.name, result.public_reply))
+                if req.scorekeeperEnabled:
+                    graded = await _adjudicate(caller, admin_model, model_name, req.mode, speaker, result.public_reply, transcript)
+                    if graded:
+                        yield {"event": "turn_score", "data": {"speaker": speaker.id, "turnIndex": index, **graded}}
             spoken_counts[speaker.id] += 1
     else:
         # --- SEQUENTIAL: speakers go in the admin's order, each seeing the last ---
@@ -269,6 +311,10 @@ async def run_admin_roundtable(req: RoundtableRequest, api_key: str, model_name:
                 turn = await caller.json(system, user, CharacterTurnOutput, speaker.temperature)
                 yield complete_event(speaker, index, turn)
                 transcript.append((speaker.name, turn.public_reply))
+                if req.scorekeeperEnabled:
+                    graded = await _adjudicate(caller, admin_model, model_name, req.mode, speaker, turn.public_reply, transcript)
+                    if graded:
+                        yield {"event": "turn_score", "data": {"speaker": speaker.id, "turnIndex": index, **graded}}
             except Exception as e:
                 event, fallback_line = error_event(speaker, index, e)
                 yield event
@@ -304,6 +350,9 @@ async def run_offline_direct_reply(req: RoundtableRequest) -> AsyncIterator[dict
         "innerThought": speaker.offline_thought, "publicReply": lines[0],
         "stanceScore": None, "memoryDelta": MemoryDelta().model_dump(), "isFallback": True,
     }}
+    if req.scorekeeperEnabled:
+        score, verdict = _OFFLINE_GRADES[0]
+        yield {"event": "turn_score", "data": {"speaker": speaker.id, "turnIndex": 0, "score": score, "verdict": verdict}}
     yield {"event": "round_end", "data": {"turnsTaken": 1}}
 
 
@@ -337,6 +386,9 @@ async def run_offline_roundtable(req: RoundtableRequest) -> AsyncIterator[dict]:
             "memoryDelta": MemoryDelta().model_dump(),
             "isFallback": True,
         }}
+        if req.scorekeeperEnabled:
+            score, verdict = _OFFLINE_GRADES[index % len(_OFFLINE_GRADES)]
+            yield {"event": "turn_score", "data": {"speaker": speaker.id, "turnIndex": index, "score": score, "verdict": verdict}}
 
     await asyncio.sleep(0.35)
     yield {"event": "round_synthesis", "data": _naive_synthesis(req.mode, seated, stance_scores)}

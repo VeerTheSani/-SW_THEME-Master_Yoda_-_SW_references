@@ -111,6 +111,34 @@ export function FlippableReply({ entry, mode }: FlippableReplyProps) {
               🧠 {badge}
             </div>
           )}
+          {/* The Adjudicator's independent grade — brutal by design, negatives welcome */}
+          {typeof entry.judgeScore === "number" && (
+            <motion.div
+              initial={{ opacity: 0, scale: 1.6, rotate: -10 }}
+              animate={{ opacity: 1, scale: 1, rotate: -2 }}
+              transition={{ type: "spring", stiffness: 340, damping: 16 }}
+              className="mt-2.5 flex items-start gap-2"
+            >
+              <span
+                className={`shrink-0 font-display text-[13px] px-2 py-0.5 border-[2.5px] select-none ${
+                  entry.judgeScore < 0
+                    ? "border-rose-600 text-rose-600 bg-rose-50"
+                    : entry.judgeScore < 5
+                      ? "border-amber-600 text-amber-700 bg-amber-50"
+                      : "border-emerald-600 text-emerald-700 bg-emerald-50"
+                }`}
+                style={{ borderRadius: "10px 4px 12px 5px" }}
+                title="The Adjudicator's independent grade (-10 to +10)"
+              >
+                ⚖ {entry.judgeScore > 0 ? "+" : ""}{entry.judgeScore.toFixed(1)}
+              </span>
+              {entry.judgeVerdict && (
+                <span className="font-mono text-[11px] leading-snug text-stone-600 italic pt-0.5">
+                  “{entry.judgeVerdict}”
+                </span>
+              )}
+            </motion.div>
+          )}
         </div>
 
         {/* BACK — the hidden reasoning */}

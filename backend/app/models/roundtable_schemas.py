@@ -122,6 +122,12 @@ class CharacterTurnOutput(BaseModel):
     memory_delta: MemoryDelta
 
 
+class TurnScore(BaseModel):
+    """The Adjudicator's independent grade for one reply — not self-reported."""
+    score: float = Field(description="-10 (actively harmful drivel) to +10 (devastatingly good). Most replies earn -2..4; reserve 7+ for genuinely sharp contributions.")
+    verdict: str = Field(description="ONE brutal, specific sentence justifying the score — name what was weak or strong, max 140 chars")
+
+
 class ActionItem(BaseModel):
     owner: str = Field(description="characterId or 'user'")
     item: str
@@ -179,6 +185,7 @@ class RoundtableRequest(BaseModel):
     maxTurns: int = 8  # legacy field — the admin now decides 1-3 turns per user message
     targetCharacterId: Optional[str] = None  # set via @name — bypasses the admin for one direct reply
     parallelReplies: bool = False  # multiple chosen speakers reply independently (concurrent) instead of one-by-one
+    scorekeeperEnabled: bool = False  # opt-in: an independent Adjudicator scores every reply after it lands
 
     class Config:
         extra = "ignore"
