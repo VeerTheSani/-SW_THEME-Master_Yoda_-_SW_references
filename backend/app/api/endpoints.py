@@ -40,7 +40,10 @@ router = APIRouter()
 # ALLOW_PRIVATE_RELAY_URLS=true in backend/.env to permit relay URLs that
 # resolve to private/loopback addresses. Off by default: on a shared server a
 # private relay target is an SSRF hole, not a feature.
-ALLOW_PRIVATE_RELAY_URLS = os.getenv("ALLOW_PRIVATE_RELAY_URLS", "").lower() in ("1", "true", "yes")
+# Read lazily (not at import time): this module is imported before load_dotenv()
+# runs in main.py, so a module-level constant would never see the .env value.
+def allow_private_relay_urls() -> bool:
+    return os.getenv("ALLOW_PRIVATE_RELAY_URLS", "").lower() in ("1", "true", "yes")
 
 # Payload ceilings — prompts are bounded server-side no matter what a client sends.
 MAX_TEXT_CHARS = 8000
@@ -60,7 +63,7 @@ def validate_relay_url(raw_url: str | None) -> str | None:
         raise HTTPException(status_code=400, detail="Relay base URL must be a plain http(s) URL.")
     if parsed.username or parsed.password:
         raise HTTPException(status_code=400, detail="Relay base URL must not embed credentials.")
-    if not ALLOW_PRIVATE_RELAY_URLS:
+    if not allow_private_relay_urls():
         try:
             resolved = {info[4][0] for info in socket.getaddrinfo(parsed.hostname, None)}
         except socket.gaierror:
