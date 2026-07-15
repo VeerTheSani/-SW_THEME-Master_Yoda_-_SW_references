@@ -11,7 +11,9 @@ app = FastAPI(title="Master Yoda & Ragebaiter Backend")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    # No cookies/sessions are used; wildcard origin + credentials is an invalid
+    # (and risky) combination, so credentials stay off.
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

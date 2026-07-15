@@ -4,9 +4,13 @@
 # This file is the "Controller". It receives the raw HTTP request from the internet,
 # decides what to do with it, calls the appropriate services, and returns a JSON response.
 
+import ipaddress
 import json
 import os
 import re
+import socket
+from urllib.parse import urlparse
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
@@ -28,6 +32,68 @@ from app.services.roundtable_prompts import MODE_SPECS
 # and attach them to the main app later.
 router = APIRouter()
 
+# ==============================================================================
+# REQUEST HARDENING
+# ==============================================================================
+
+# Self-hosting with a local gateway (Ollama, LM Studio…)? Set
+# ALLOW_PRIVATE_RELAY_URLS=true in backend/.env to permit relay URLs that
+# resolve to private/loopback addresses. Off by default: on a shared server a
+# private relay target is an SSRF hole, not a feature.
+ALLOW_PRIVATE_RELAY_URLS = os.getenv("ALLOW_PRIVATE_RELAY_URLS", "").lower() in ("1", "true", "yes")
+
+# Payload ceilings — prompts are bounded server-side no matter what a client sends.
+MAX_TEXT_CHARS = 8000
+MAX_HISTORY_ITEMS = 100
+MAX_GRAPH_NODES = 200
+MAX_GRAPH_EDGES = 400
+
+
+def validate_relay_url(raw_url: str | None) -> str | None:
+    """Normalize and vet a user-supplied provider base URL. The server will POST
+    to this address, so it must never be a path into our own network."""
+    url = (raw_url or "").strip()
+    if not url:
+        return None
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise HTTPException(status_code=400, detail="Relay base URL must be a plain http(s) URL.")
+    if parsed.username or parsed.password:
+        raise HTTPException(status_code=400, detail="Relay base URL must not embed credentials.")
+    if not ALLOW_PRIVATE_RELAY_URLS:
+        try:
+            resolved = {info[4][0] for info in socket.getaddrinfo(parsed.hostname, None)}
+        except socket.gaierror:
+            raise HTTPException(status_code=400, detail="Relay host could not be resolved.")
+        for address in resolved:
+            ip = ipaddress.ip_address(address.split("%")[0])
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Relay URLs that resolve to private/internal addresses are blocked. "
+                           "Self-hosting with a local gateway? Set ALLOW_PRIVATE_RELAY_URLS=true in backend/.env.",
+                )
+    return url
+
+
+def resolve_api_key(custom_api_key: str | None, provider_base_url: str | None) -> str:
+    """BYO provider means BYO key: the server's own GEMINI_API_KEY must NEVER be
+    sent as a bearer token to a user-chosen URL — that would let any client
+    exfiltrate it with one request."""
+    if provider_base_url:
+        return custom_api_key or ""
+    return custom_api_key or os.getenv("GEMINI_API_KEY") or ""
+
+
+def enforce_size_limits(text: str, history: list) -> None:
+    if len(text) > MAX_TEXT_CHARS:
+        raise HTTPException(status_code=413, detail=f"Message too long (max {MAX_TEXT_CHARS} characters).")
+    if len(history) > MAX_HISTORY_ITEMS:
+        raise HTTPException(status_code=413, detail=f"History too long (max {MAX_HISTORY_ITEMS} messages).")
+    for msg in history:
+        if len(msg.text) > MAX_TEXT_CHARS:
+            raise HTTPException(status_code=413, detail="A history message exceeds the size limit.")
+
 # The @ symbol is a "Decorator". It tells FastAPI:
 # "Hey, attach the function below to the URL '/yoda/generate' via a POST request."
 @router.post("/yoda/generate")
@@ -42,11 +108,12 @@ async def generate_response(req: GenerationRequest):
     if not text_content:
         raise HTTPException(status_code=400, detail="Empty thoughts, you have. Provide text, you must.")
 
-    # 2. Figure out the API Key
-    # It tries to use the custom key from the frontend first.
-    # If none, it looks at the hidden environment variable (os.getenv).
-    api_key = req.customApiKey or os.getenv("GEMINI_API_KEY") or ""
-    provider_base_url = (req.providerBaseUrl or "").strip() or None
+    enforce_size_limits(text_content, req.history)
+
+    # 2. Figure out the API Key and (optional) custom relay.
+    # BYO relay is BYO key — the server's key never leaves for a user-chosen URL.
+    provider_base_url = validate_relay_url(req.providerBaseUrl)
+    api_key = resolve_api_key(req.customApiKey, provider_base_url)
 
     # Check if the key is empty or just the default placeholder from the .env file.
     # Irrelevant once a custom provider is set — that's an explicit BYO-everything choice.
@@ -138,7 +205,7 @@ async def generate_response(req: GenerationRequest):
             }
         
         # If it's a critical, unknown error, raise a 500 Internal Server Error.
-        raise HTTPException(status_code=500, detail=f"Disturbance in the Force: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Disturbance in the Force: {str(e)[:300]}")
 
 
 # ==============================================================================
@@ -169,8 +236,13 @@ async def roundtable_generate(req: RoundtableRequest):
         raise HTTPException(status_code=400, detail=f"@{req.targetCharacterId} is not seated at this table.")
 
     # 2. Resolve key + model the same way /yoda/generate does.
-    api_key = req.customApiKey or os.getenv("GEMINI_API_KEY") or ""
-    provider_base_url = (req.providerBaseUrl or "").strip() or None
+    enforce_size_limits(req.text, req.history)
+    for participant in req.participants:
+        if len(participant.memory.nodes) > MAX_GRAPH_NODES or len(participant.memory.edges) > MAX_GRAPH_EDGES:
+            raise HTTPException(status_code=413, detail=f"{participant.characterId}'s memory graph exceeds the size limit.")
+
+    provider_base_url = validate_relay_url(req.providerBaseUrl)
+    api_key = resolve_api_key(req.customApiKey, provider_base_url)
     is_default_key_unconfigured = not provider_base_url and (api_key == "" or api_key == "MY_GEMINI_API_KEY" or "MY_" in api_key)
     model_name = req.selectedModel or "gemini-3.5-flash"
     if not provider_base_url and not is_plausible_google_model(model_name):
