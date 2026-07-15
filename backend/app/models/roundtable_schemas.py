@@ -181,6 +181,7 @@ class RoundtableRequest(BaseModel):
     customApiKey: Optional[str] = None
     providerBaseUrl: Optional[str] = None  # BYO OpenAI-compatible endpoint (OpenRouter, etc.)
     selectedModel: Optional[str] = "gemini-3.5-flash"
+    houseModel: Optional[str] = None  # visitor-typed model for the HOST's default relay (beats env default)
     responseLength: Optional[str] = "medium"
     maxTurns: int = 8  # legacy field — the admin now decides 1-3 turns per user message
     targetCharacterId: Optional[str] = None  # set via @name — bypasses the admin for one direct reply

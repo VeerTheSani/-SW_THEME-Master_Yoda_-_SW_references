@@ -79,6 +79,44 @@ def validate_relay_url(raw_url: str | None) -> str | None:
     return url
 
 
+def server_default_provider() -> tuple[str, str, str] | None:
+    """Operator-configured default relay for deployments: visitors who bring no
+    key/provider of their own chat through this instead of the server's Gemini
+    key. Set DEFAULT_PROVIDER_BASE_URL + DEFAULT_PROVIDER_MODEL (and usually
+    DEFAULT_PROVIDER_API_KEY) in the server's environment. The URL is operator
+    trust — it never mixes with client-supplied keys or URLs."""
+    url = (os.getenv("DEFAULT_PROVIDER_BASE_URL") or "").strip().rstrip("/")
+    model = (os.getenv("DEFAULT_PROVIDER_MODEL") or "").strip()
+    if not url or not model:
+        return None
+    return url, os.getenv("DEFAULT_PROVIDER_API_KEY") or "", model
+
+
+def apply_server_default(provider_base_url: str | None, api_key: str, model_name: str,
+                         custom_api_key: str | None, house_model: str | None = None) -> tuple[str | None, str, str]:
+    """If the client brought no provider AND no key, fall through to the
+    operator's default relay (when configured). A client's own relay or Google
+    key always wins — and the default key is only ever sent to the default URL.
+    The model is the visitor's pick: a typed frontend value (houseModel) beats
+    the env model, which is just the starting default."""
+    if provider_base_url or (custom_api_key or "").strip():
+        return provider_base_url, api_key, model_name
+    default = server_default_provider()
+    if default:
+        url, key, default_model = default
+        return url, key, ((house_model or "").strip() or default_model)
+    return provider_base_url, api_key, model_name
+
+
+@router.get("/config")
+async def public_config():
+    """Non-secret runtime config for the frontend: is a host default provider
+    live, and what model does it start on (visitors may type their own).
+    The default URL and key are never exposed."""
+    default = server_default_provider()
+    return {"defaultProvider": {"active": default is not None, "model": default[2] if default else ""}}
+
+
 def resolve_api_key(custom_api_key: str | None, provider_base_url: str | None) -> str:
     """BYO provider means BYO key: the server's own GEMINI_API_KEY must NEVER be
     sent as a bearer token to a user-chosen URL — that would let any client
@@ -117,6 +155,11 @@ async def generate_response(req: GenerationRequest):
     # BYO relay is BYO key — the server's key never leaves for a user-chosen URL.
     provider_base_url = validate_relay_url(req.providerBaseUrl)
     api_key = resolve_api_key(req.customApiKey, provider_base_url)
+    model_name = req.selectedModel or "gemini-3.5-flash"
+
+    # Deployed default: clients who brought nothing chat on the operator's relay.
+    provider_base_url, api_key, model_name = apply_server_default(
+        provider_base_url, api_key, model_name, req.customApiKey, req.houseModel)
 
     # Check if the key is empty or just the default placeholder from the .env file.
     # Irrelevant once a custom provider is set — that's an explicit BYO-everything choice.
@@ -133,8 +176,6 @@ async def generate_response(req: GenerationRequest):
         }
 
     # 4. Resolve the Model Name
-    model_name = req.selectedModel or "gemini-3.5-flash"
-
     if provider_base_url:
         # A custom provider's model catalog is arbitrary (e.g. "google/gemini-2.5-flash"
         # on OpenRouter) — the Gemini-specific validation below doesn't apply.
@@ -246,10 +287,16 @@ async def roundtable_generate(req: RoundtableRequest):
 
     provider_base_url = validate_relay_url(req.providerBaseUrl)
     api_key = resolve_api_key(req.customApiKey, provider_base_url)
-    is_default_key_unconfigured = not provider_base_url and (api_key == "" or api_key == "MY_GEMINI_API_KEY" or "MY_" in api_key)
     model_name = req.selectedModel or "gemini-3.5-flash"
+    # Deployed default: clients who brought nothing sit at the operator's relay.
+    provider_base_url, api_key, model_name = apply_server_default(
+        provider_base_url, api_key, model_name, req.customApiKey, req.houseModel)
+    is_default_key_unconfigured = not provider_base_url and (api_key == "" or api_key == "MY_GEMINI_API_KEY" or "MY_" in api_key)
     if not provider_base_url and not is_plausible_google_model(model_name):
         model_name = "gemini-2.5-flash"
+    # The orchestrator reads the relay URL off the request — reflect the
+    # validated/defaulted value there so all its callers use the same one.
+    req.providerBaseUrl = provider_base_url
 
     # Optional separate moderator/Adjudicator brain — same SSRF + key-exfiltration
     # rules as the main provider. Active only when a moderator model is named.

@@ -197,6 +197,25 @@ export default function App() {
     return !!localStorage.getItem("jedi_provider_base_url");
   });
 
+  // HOST DEFAULT PROVIDER: when the backend operator set DEFAULT_PROVIDER_* env
+  // vars, visitors who bring no key/relay of their own ride the host's relay.
+  // The model is the VISITOR's choice, typed here — the env model is only the
+  // starting default. URL + key never reach the browser.
+  const [serverDefault, setServerDefault] = useState<{ active: boolean; model: string } | null>(null);
+  const [houseModel, setHouseModel] = useState<string>(() => localStorage.getItem("jedi_house_model") || "");
+  useEffect(() => {
+    fetch("/api/config")
+      .then((response) => response.json())
+      .then((cfg) => setServerDefault(cfg?.defaultProvider ?? null))
+      .catch(() => setServerDefault(null));
+  }, []);
+  const houseMode = Boolean(serverDefault?.active) && !customProviderMode && !customApiKey;
+  const effectiveHouseModel = houseModel.trim() || serverDefault?.model || "";
+  const handleHouseModelChange = (value: string) => {
+    setHouseModel(value);
+    localStorage.setItem("jedi_house_model", value);
+  };
+
   const persistProviderConfig = (config: ProviderConfig) => {
     try {
       localStorage.setItem(PROVIDER_CONFIG_KEY, JSON.stringify(config));
@@ -817,6 +836,7 @@ export default function App() {
           customApiKey: customApiKey,
           providerBaseUrl: providerBaseUrl || undefined,
           selectedModel: selectedModel,
+          houseModel: houseMode ? effectiveHouseModel : undefined,
           history: updatedMessages.slice(0, -1), // Send full conversation memory history!
           ragebaitLevel: ragebaitLevel,
           responseLength: responseLength
@@ -931,6 +951,7 @@ export default function App() {
           customApiKey: customApiKey,
           providerBaseUrl: providerBaseUrl || undefined,
           selectedModel: selectedModel,
+          houseModel: houseMode ? effectiveHouseModel : undefined,
           history: truncatedMessages.slice(0, -1),
           ragebaitLevel: ragebaitLevel,
           responseLength: responseLength
@@ -1307,8 +1328,8 @@ export default function App() {
                 <label className={`text-xs font-mono font-bold uppercase tracking-wide ${isUnhinged ? "text-rose-400" : "text-stone-600"}`}>
                   2. Select Sketch Model
                 </label>
-                <span className={`text-[10px] font-mono font-bold uppercase ${customProviderMode ? "text-amber-700" : "text-stone-400"}`}>
-                  {customProviderMode ? "📡 Smuggler's uplink" : "Google Models"}
+                <span className={`text-[10px] font-mono font-bold uppercase ${customProviderMode ? "text-amber-700" : houseMode ? "text-sky-700" : "text-stone-400"}`}>
+                  {customProviderMode ? "📡 Smuggler's uplink" : houseMode ? "🏠 Host's relay" : "Google Models"}
                 </span>
               </div>
               {customProviderMode ? (
@@ -1319,6 +1340,19 @@ export default function App() {
                   placeholder="Type the model id, e.g. google/gemini-2.5-flash"
                   className={`w-full ${isUnhinged ? "bg-[#181011] text-rose-100 border-rose-600 focus:ring-[#f43f5e] shadow-[2px_2px_0px_0px_#ef4444]" : "bg-white border-[#1e1b18] text-[#1e1b18] focus:ring-[#10b981] shadow-[2px_2px_0px_0px_#1e1b18]"} border-2 rounded-lg py-2.5 px-3 text-xs font-mono outline-none placeholder:text-stone-400 transition-all font-bold`}
                 />
+              ) : houseMode ? (
+                <>
+                  <input
+                    type="text"
+                    value={houseModel}
+                    onChange={(e) => handleHouseModelChange(e.target.value)}
+                    placeholder={serverDefault?.model || "type a model id"}
+                    className={`w-full ${isUnhinged ? "bg-[#181011] text-rose-100 border-rose-600 focus:ring-[#f43f5e] shadow-[2px_2px_0px_0px_#ef4444]" : "bg-white border-[#1e1b18] text-[#1e1b18] focus:ring-[#0ea5e9] shadow-[2px_2px_0px_0px_#1e1b18]"} border-2 rounded-lg py-2.5 px-3 text-xs font-mono outline-none placeholder:text-stone-400 transition-all font-bold`}
+                  />
+                  <p className={`text-[10px] font-mono ${isUnhinged ? "text-rose-500" : "text-stone-500"}`}>
+                    This site's host provides the AI — type any model their provider supports, or leave it on “{serverDefault?.model}”.
+                  </p>
+                </>
               ) : (
                 <select
                   value={selectedModel}
@@ -1552,12 +1586,14 @@ export default function App() {
                   <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border-2 ${
                     customProviderMode
                       ? "border-amber-600 bg-amber-100 text-amber-800"
-                      : "border-emerald-600 bg-emerald-100 text-emerald-800"
+                      : houseMode
+                        ? "border-sky-600 bg-sky-100 text-sky-800"
+                        : "border-emerald-600 bg-emerald-100 text-emerald-800"
                   }`}>
-                    {customProviderMode ? "📡 Smuggler's uplink" : "🛰 Google AI Studio (direct)"}
+                    {customProviderMode ? "📡 Smuggler's uplink" : houseMode ? "🏠 Host's relay (default)" : "🛰 Google AI Studio (direct)"}
                   </span>
                   <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border-2 border-dashed ${isUnhinged ? "border-rose-700 text-rose-300" : "border-stone-400 text-stone-600 bg-white"}`}>
-                    {selectedModel || "no model set"}
+                    {(houseMode ? effectiveHouseModel : selectedModel) || "no model set"}
                   </span>
                   {customProviderMode && (
                     <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border-2 border-dashed max-w-[220px] truncate ${
@@ -1912,6 +1948,7 @@ export default function App() {
                 customApiKey={customApiKey}
                 providerBaseUrl={providerBaseUrl}
                 selectedModel={selectedModel}
+                houseModel={houseMode ? effectiveHouseModel : undefined}
                 moderatorOverride={resolveModeratorOverride(providerConfig)}
                 memories={characterMemories}
                 onMemoriesChange={handleMemoriesChange}
