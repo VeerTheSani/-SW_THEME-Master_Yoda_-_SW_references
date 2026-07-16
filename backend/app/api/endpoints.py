@@ -99,6 +99,7 @@ def server_gemini_available() -> bool:
 
 
 def apply_server_default(provider_base_url: str | None, api_key: str, model_name: str,
+<<<<<<< Updated upstream
                          custom_api_key: str | None, house_model: str | None = None,
                          power_source: str | None = None) -> tuple[str | None, str, str]:
     """Decide whose provider serves this request.
@@ -110,12 +111,29 @@ def apply_server_default(provider_base_url: str | None, api_key: str, model_name
                             default relay > server Gemini key > offline fallback.
     Server-side keys (Gemini AND default-relay) are never sent to a client-chosen URL.
     The model on the house relay is the visitor's pick: houseModel beats the env model."""
+=======
+                         custom_api_key: str | None, power_source: str | None = None) -> tuple[str | None, str, str]:
+    """Decide whose provider serves this request.
+
+    powerSource is the visitor's EXPLICIT pick from the Configuration menu:
+      - "house"          -> the operator's relay, ALWAYS on the env model
+                            (the model is the operator's business, never the visitor's)
+      - "server_gemini"  -> Google on the operator's GEMINI_API_KEY; the visitor
+                            only picks a Gemini model (client URL/key ignored)
+      - None (legacy)    -> implicit priority: client relay > client Google key >
+                            default relay > server Gemini key > offline fallback.
+    Server-side keys (Gemini AND default-relay) are never sent to a client-chosen URL."""
+>>>>>>> Stashed changes
     default = server_default_provider()
     if power_source == "house":
         if not default:
             raise HTTPException(status_code=400, detail="This server has no host-provided relay configured.")
+<<<<<<< Updated upstream
         url, key, default_model = default
         return url, key, ((house_model or "").strip() or default_model)
+=======
+        return default
+>>>>>>> Stashed changes
     if power_source == "server_gemini":
         if not server_gemini_available():
             raise HTTPException(status_code=400, detail="This server has no host-provided Gemini key configured.")
@@ -131,6 +149,7 @@ def apply_server_default(provider_base_url: str | None, api_key: str, model_name
 @router.get("/config")
 async def public_config():
     """Non-secret runtime config for the frontend: which host-funded power
+<<<<<<< Updated upstream
     sources exist (default relay + its label/starting model, server Gemini) so
     visitors can pick one. URLs and keys are never exposed."""
     default = server_default_provider()
@@ -140,6 +159,14 @@ async def public_config():
             "active": default is not None,
             "model": default[2] if default else "",
             "label": label,
+=======
+    sources exist so visitors can pick one. The relay's URL, key AND model are
+    never exposed — the model is the operator's business."""
+    return {
+        "defaultProvider": {
+            "active": server_default_provider() is not None,
+            "label": (os.getenv("DEFAULT_PROVIDER_LABEL") or "").strip() or "Host's relay (free)",
+>>>>>>> Stashed changes
         },
         "serverGemini": {"active": server_gemini_available()},
     }
@@ -187,7 +214,11 @@ async def generate_response(req: GenerationRequest):
 
     # Deployed default: clients who brought nothing chat on the operator's relay.
     provider_base_url, api_key, model_name = apply_server_default(
+<<<<<<< Updated upstream
         provider_base_url, api_key, model_name, req.customApiKey, req.houseModel, req.powerSource)
+=======
+        provider_base_url, api_key, model_name, req.customApiKey, req.powerSource)
+>>>>>>> Stashed changes
 
     # Check if the key is empty or just the default placeholder from the .env file.
     # Irrelevant once a custom provider is set — that's an explicit BYO-everything choice.
@@ -318,7 +349,11 @@ async def roundtable_generate(req: RoundtableRequest):
     model_name = req.selectedModel or "gemini-3.5-flash"
     # Deployed default: clients who brought nothing sit at the operator's relay.
     provider_base_url, api_key, model_name = apply_server_default(
+<<<<<<< Updated upstream
         provider_base_url, api_key, model_name, req.customApiKey, req.houseModel, req.powerSource)
+=======
+        provider_base_url, api_key, model_name, req.customApiKey, req.powerSource)
+>>>>>>> Stashed changes
     is_default_key_unconfigured = not provider_base_url and (api_key == "" or api_key == "MY_GEMINI_API_KEY" or "MY_" in api_key)
     if not provider_base_url and not is_plausible_google_model(model_name):
         model_name = "gemini-2.5-flash"
