@@ -43,8 +43,6 @@ interface RoundtablePanelProps {
   customApiKey: string;
   providerBaseUrl?: string;
   selectedModel: string;
-  // Visitor-typed model for the HOST's default relay — set only in house mode.
-  houseModel?: string;
   // Explicit host-funded source pick: "house" | "server_gemini" (undefined = legacy).
   powerSource?: "house" | "server_gemini";
   // Separate backstage brain (moderator + Adjudicator) — null = same as main.
@@ -66,7 +64,6 @@ export function RoundtablePanel({
   customApiKey,
   providerBaseUrl,
   selectedModel,
-  houseModel,
   powerSource,
   moderatorOverride,
   memories,
@@ -285,7 +282,6 @@ export function RoundtablePanel({
           targetCharacterId: targetId,
           parallelReplies,
           scorekeeperEnabled,
-          houseModel: houseModel || undefined,
           powerSource: powerSource || undefined,
           moderatorProviderBaseUrl: moderatorOverride?.url || undefined,
           moderatorApiKey: moderatorOverride?.key || undefined,

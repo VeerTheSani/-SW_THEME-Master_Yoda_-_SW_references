@@ -24,8 +24,6 @@ export interface RoundtableRequestBody {
   targetCharacterId?: CharacterId | null;
   parallelReplies?: boolean;
   scorekeeperEnabled?: boolean;
-  // Visitor-typed model for the HOST's default relay (beats the env default).
-  houseModel?: string;
   // Explicit host-funded source pick: "house" | "server_gemini" (undefined = legacy).
   powerSource?: string;
   // Separate moderator/Adjudicator brain — active when moderatorModel is set.

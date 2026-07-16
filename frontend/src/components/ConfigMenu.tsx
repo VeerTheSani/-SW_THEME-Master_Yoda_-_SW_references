@@ -11,9 +11,10 @@ import { Check, Eye, EyeOff, X } from "lucide-react";
 import { DEFAULT_GOOGLE_MODEL, GOOGLE_MODEL_OPTIONS } from "../lib/googleModels";
 
 // What the backend's /api/config exposes: which host-funded power sources
-// exist. URLs and keys never reach the browser — labels and booleans only.
+// exist. URLs, keys AND the relay's model never reach the browser — the model
+// is the host's business ("i am vader himself").
 export interface ServerConfig {
-  defaultProvider: { active: boolean; model: string; label: string };
+  defaultProvider: { active: boolean; label: string };
   serverGemini: { active: boolean };
 }
 
@@ -24,8 +25,6 @@ export interface ProviderConfig {
   relayUrl: string;
   relayKey: string;
   relayModel: string;
-  // Visitor-typed model for the host's relay (empty = host's default model).
-  houseModel: string;
   // The Roundtable's backstage brain (moderator + Adjudicator judge).
   // "same" = whatever the main source is; or its own Google / relay setup.
   moderatorSource: "same" | "google" | "custom";
@@ -47,7 +46,6 @@ export function defaultProviderConfig(): ProviderConfig {
     relayUrl: "",
     relayKey: "",
     relayModel: "",
-    houseModel: "",
     moderatorSource: "same",
     moderatorGoogleKey: "",
     moderatorGoogleModel: DEFAULT_MODERATOR_GOOGLE_MODEL,
@@ -217,21 +215,10 @@ export function ConfigMenu({ open, initial, isUnhinged, serverConfig, onClose, o
                   This site's host pays for the AI — you bring nothing. Transmissions run through the host's own
                   provider; no key, no setup, free.
                 </p>
-
-                <div>
-                  <label className={label}>Model</label>
-                  <input
-                    type="text"
-                    value={draft.houseModel}
-                    onChange={(e) => setDraft({ ...draft, houseModel: e.target.value })}
-                    placeholder={serverConfig?.defaultProvider.model || "host's default model"}
-                    className={inputCls}
-                  />
-                  <p className={`mt-1 text-[10px] font-mono ${isUnhinged ? "text-rose-500" : "text-stone-500"}`}>
-                    Host's default: <b>{serverConfig?.defaultProvider.model || "unknown"}</b>. Type any model the
-                    host's provider supports, or leave empty to stay on the default.
-                  </p>
-                </div>
+                <p className={`text-[10px] font-mono px-2.5 py-2 border-[1.5px] border-dashed rounded-lg ${isUnhinged ? "text-rose-300 border-rose-700" : "text-sky-800 border-sky-500 bg-sky-50"}`}>
+                  ⚙ The model is the host's choice — nothing to configure here. Want to pick a model? Use the
+                  Google Gemini source or your own relay.
+                </p>
               </div>
             ) : section === "google" ? (
               <div className="space-y-3.5">
