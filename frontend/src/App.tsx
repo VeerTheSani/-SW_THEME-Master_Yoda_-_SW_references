@@ -6,7 +6,7 @@ import YodaGlobe from "./components/YodaGlobe";
 import InputArea from "./components/InputArea";
 import ChatHistory from "./components/ChatHistory";
 import { RoundtablePanel } from "./components/roundtable/RoundtablePanel";
-import { ConfigMenu, PROVIDER_CONFIG_KEY, ProviderConfig, defaultProviderConfig, resolveModeratorOverride } from "./components/ConfigMenu";
+import { ConfigMenu, PROVIDER_CONFIG_KEY, ProviderConfig, ServerConfig, defaultProviderConfig, resolveModeratorOverride } from "./components/ConfigMenu";
 import { CHARACTER_ORDER } from "./lib/characters";
 import { GOOGLE_MODEL_OPTIONS } from "./lib/googleModels";
 import { loadGuestMemory, saveGuestMemory } from "./lib/memoryGraph";
@@ -174,7 +174,12 @@ export default function App() {
   const [providerConfig, setProviderConfig] = useState<ProviderConfig>(() => {
     try {
       const raw = localStorage.getItem(PROVIDER_CONFIG_KEY);
-      if (raw) return { ...defaultProviderConfig(), ...JSON.parse(raw) };
+      if (raw) {
+        const parsed = { ...defaultProviderConfig(), ...JSON.parse(raw) };
+        // Migrate the old standalone house-model key into the config.
+        if (!parsed.houseModel) parsed.houseModel = localStorage.getItem("jedi_house_model") || "";
+        return parsed;
+      }
     } catch { /* corrupted — rebuild below */ }
     // Migrate the legacy flat keys into the config shape.
     const legacyKey = localStorage.getItem("jedi_custom_api_key") || "";
@@ -197,23 +202,48 @@ export default function App() {
     return !!localStorage.getItem("jedi_provider_base_url");
   });
 
-  // HOST DEFAULT PROVIDER: when the backend operator set DEFAULT_PROVIDER_* env
-  // vars, visitors who bring no key/relay of their own ride the host's relay.
-  // The model is the VISITOR's choice, typed here — the env model is only the
-  // starting default. URL + key never reach the browser.
-  const [serverDefault, setServerDefault] = useState<{ active: boolean; model: string } | null>(null);
-  const [houseModel, setHouseModel] = useState<string>(() => localStorage.getItem("jedi_house_model") || "");
+  // HOST-FUNDED POWER SOURCES: /api/config says which exist on this server —
+  // the host's default relay (with its display label + starting model) and/or
+  // the host's Gemini key. The visitor picks one EXPLICITLY in the Configuration
+  // menu; URLs and keys never reach the browser.
+  const [serverConfig, setServerConfig] = useState<ServerConfig | null>(null);
   useEffect(() => {
     fetch("/api/config")
       .then((response) => response.json())
-      .then((cfg) => setServerDefault(cfg?.defaultProvider ?? null))
-      .catch(() => setServerDefault(null));
+      .then((cfg) => {
+        if (!cfg?.defaultProvider) { setServerConfig(null); return; }
+        const next: ServerConfig = {
+          defaultProvider: {
+            active: Boolean(cfg.defaultProvider.active),
+            model: cfg.defaultProvider.model || "",
+            label: cfg.defaultProvider.label || "Host's relay (free)",
+          },
+          serverGemini: { active: Boolean(cfg?.serverGemini?.active) },
+        };
+        setServerConfig(next);
+        // First visit ever (no saved config): default to the host's relay.
+        if (next.defaultProvider.active && !localStorage.getItem(PROVIDER_CONFIG_KEY)) {
+          setProviderConfig((prev: ProviderConfig) => {
+            const seeded = { ...prev, source: "house" as const };
+            persistProviderConfig(seeded);
+            return seeded;
+          });
+        }
+      })
+      .catch(() => setServerConfig(null));
   }, []);
-  const houseMode = Boolean(serverDefault?.active) && !customProviderMode && !customApiKey;
-  const effectiveHouseModel = houseModel.trim() || serverDefault?.model || "";
+
+  // Which brain answers, derived from the visitor's explicit pick.
+  const houseMode = providerConfig.source === "house" && Boolean(serverConfig?.defaultProvider.active);
+  const serverGeminiMode =
+    providerConfig.source === "google" && !customApiKey && Boolean(serverConfig?.serverGemini.active);
+  const effectiveHouseModel = providerConfig.houseModel.trim() || serverConfig?.defaultProvider.model || "";
   const handleHouseModelChange = (value: string) => {
-    setHouseModel(value);
-    localStorage.setItem("jedi_house_model", value);
+    setProviderConfig((prev: ProviderConfig) => {
+      const next = { ...prev, houseModel: value };
+      persistProviderConfig(next);
+      return next;
+    });
   };
 
   const persistProviderConfig = (config: ProviderConfig) => {
@@ -228,14 +258,20 @@ export default function App() {
     setProviderConfig(config);
     persistProviderConfig(config);
     const isCustom = config.source === "custom";
+    const isHouse = config.source === "house";
     setCustomProviderMode(isCustom);
     const appliedUrl = isCustom ? config.relayUrl.trim() : "";
     setProviderBaseUrl(appliedUrl);
     localStorage.setItem("jedi_provider_base_url", appliedUrl);
-    const appliedKey = isCustom ? config.relayKey : config.googleKey;
+    // House = the host's key server-side; the client sends none of its own.
+    const appliedKey = isCustom ? config.relayKey : isHouse ? "" : config.googleKey;
     setCustomApiKey(appliedKey);
     localStorage.setItem("jedi_custom_api_key", appliedKey);
-    const appliedModel = isCustom ? config.relayModel.trim() : config.googleModel;
+    const appliedModel = isCustom
+      ? config.relayModel.trim()
+      : isHouse
+        ? (config.houseModel.trim() || serverConfig?.defaultProvider.model || "")
+        : config.googleModel;
     setSelectedModel(appliedModel);
     syncActiveStateToSessionsList({ selectedModel: appliedModel });
   };
@@ -837,6 +873,7 @@ export default function App() {
           providerBaseUrl: providerBaseUrl || undefined,
           selectedModel: selectedModel,
           houseModel: houseMode ? effectiveHouseModel : undefined,
+          powerSource: houseMode ? "house" : serverGeminiMode ? "server_gemini" : undefined,
           history: updatedMessages.slice(0, -1), // Send full conversation memory history!
           ragebaitLevel: ragebaitLevel,
           responseLength: responseLength
@@ -952,6 +989,7 @@ export default function App() {
           providerBaseUrl: providerBaseUrl || undefined,
           selectedModel: selectedModel,
           houseModel: houseMode ? effectiveHouseModel : undefined,
+          powerSource: houseMode ? "house" : serverGeminiMode ? "server_gemini" : undefined,
           history: truncatedMessages.slice(0, -1),
           ragebaitLevel: ragebaitLevel,
           responseLength: responseLength
@@ -1344,13 +1382,13 @@ export default function App() {
                 <>
                   <input
                     type="text"
-                    value={houseModel}
+                    value={providerConfig.houseModel}
                     onChange={(e) => handleHouseModelChange(e.target.value)}
-                    placeholder={serverDefault?.model || "type a model id"}
+                    placeholder={serverConfig?.defaultProvider.model || "type a model id"}
                     className={`w-full ${isUnhinged ? "bg-[#181011] text-rose-100 border-rose-600 focus:ring-[#f43f5e] shadow-[2px_2px_0px_0px_#ef4444]" : "bg-white border-[#1e1b18] text-[#1e1b18] focus:ring-[#0ea5e9] shadow-[2px_2px_0px_0px_#1e1b18]"} border-2 rounded-lg py-2.5 px-3 text-xs font-mono outline-none placeholder:text-stone-400 transition-all font-bold`}
                   />
                   <p className={`text-[10px] font-mono ${isUnhinged ? "text-rose-500" : "text-stone-500"}`}>
-                    This site's host provides the AI — type any model their provider supports, or leave it on “{serverDefault?.model}”.
+                    Provided by this site's host — type any model their provider supports, or leave it on “{serverConfig?.defaultProvider.model}”.
                   </p>
                 </>
               ) : (
@@ -1590,7 +1628,13 @@ export default function App() {
                         ? "border-sky-600 bg-sky-100 text-sky-800"
                         : "border-emerald-600 bg-emerald-100 text-emerald-800"
                   }`}>
-                    {customProviderMode ? "📡 Smuggler's uplink" : houseMode ? "🏠 Host's relay (default)" : "🛰 Google AI Studio (direct)"}
+                    {customProviderMode
+                      ? "📡 Smuggler's uplink"
+                      : houseMode
+                        ? `🏠 ${serverConfig?.defaultProvider.label || "Host's relay (free)"}`
+                        : serverGeminiMode
+                          ? "🛰 Google Gemini (host's key — free)"
+                          : "🛰 Google AI Studio (direct)"}
                   </span>
                   <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border-2 border-dashed ${isUnhinged ? "border-rose-700 text-rose-300" : "border-stone-400 text-stone-600 bg-white"}`}>
                     {(houseMode ? effectiveHouseModel : selectedModel) || "no model set"}
@@ -1949,6 +1993,7 @@ export default function App() {
                 providerBaseUrl={providerBaseUrl}
                 selectedModel={selectedModel}
                 houseModel={houseMode ? effectiveHouseModel : undefined}
+                powerSource={houseMode ? "house" : serverGeminiMode ? "server_gemini" : undefined}
                 moderatorOverride={resolveModeratorOverride(providerConfig)}
                 memories={characterMemories}
                 onMemoriesChange={handleMemoriesChange}
@@ -2067,6 +2112,7 @@ export default function App() {
           open={showConfigMenu}
           initial={providerConfig}
           isUnhinged={isUnhinged}
+          serverConfig={serverConfig}
           onClose={() => setShowConfigMenu(false)}
           onApply={handleApplyProviderConfig}
         />

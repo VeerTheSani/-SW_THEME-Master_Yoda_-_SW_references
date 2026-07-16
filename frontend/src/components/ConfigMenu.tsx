@@ -10,13 +10,22 @@ import { motion } from "motion/react";
 import { Check, Eye, EyeOff, X } from "lucide-react";
 import { DEFAULT_GOOGLE_MODEL, GOOGLE_MODEL_OPTIONS } from "../lib/googleModels";
 
+// What the backend's /api/config exposes: which host-funded power sources
+// exist. URLs and keys never reach the browser — labels and booleans only.
+export interface ServerConfig {
+  defaultProvider: { active: boolean; model: string; label: string };
+  serverGemini: { active: boolean };
+}
+
 export interface ProviderConfig {
-  source: "google" | "custom";
+  source: "house" | "google" | "custom";
   googleKey: string;
   googleModel: string;
   relayUrl: string;
   relayKey: string;
   relayModel: string;
+  // Visitor-typed model for the host's relay (empty = host's default model).
+  houseModel: string;
   // The Roundtable's backstage brain (moderator + Adjudicator judge).
   // "same" = whatever the main source is; or its own Google / relay setup.
   moderatorSource: "same" | "google" | "custom";
@@ -38,6 +47,7 @@ export function defaultProviderConfig(): ProviderConfig {
     relayUrl: "",
     relayKey: "",
     relayModel: "",
+    houseModel: "",
     moderatorSource: "same",
     moderatorGoogleKey: "",
     moderatorGoogleModel: DEFAULT_MODERATOR_GOOGLE_MODEL,
@@ -71,13 +81,14 @@ interface ConfigMenuProps {
   open: boolean;
   initial: ProviderConfig;
   isUnhinged: boolean;
+  serverConfig?: ServerConfig | null;
   onClose: () => void;
   onApply: (config: ProviderConfig) => void;
 }
 
-type Section = "google" | "custom" | "moderator";
+type Section = "house" | "google" | "custom" | "moderator";
 
-export function ConfigMenu({ open, initial, isUnhinged, onClose, onApply }: ConfigMenuProps) {
+export function ConfigMenu({ open, initial, isUnhinged, serverConfig, onClose, onApply }: ConfigMenuProps) {
   const [draft, setDraft] = useState<ProviderConfig>(initial);
   const [section, setSection] = useState<Section>(initial.source);
   const [showKey, setShowKey] = useState(false);
@@ -85,10 +96,13 @@ export function ConfigMenu({ open, initial, isUnhinged, onClose, onApply }: Conf
   const [googleModelIsCustom, setGoogleModelIsCustom] = useState(false);
 
   // Re-seed drafts every time the menu opens; discard leftovers from last time.
+  const houseAvailable = Boolean(serverConfig?.defaultProvider.active);
+  const houseLabel = serverConfig?.defaultProvider.label || "Host's relay (free)";
+
   useEffect(() => {
     if (open) {
       setDraft(initial);
-      setSection(initial.source);
+      setSection(initial.source === "house" && !houseAvailable ? "google" : initial.source);
       setShowKey(false);
       setJustApplied(false);
       setGoogleModelIsCustom(!GOOGLE_MODEL_OPTIONS.some((option) => option.id === initial.googleModel));
@@ -135,7 +149,7 @@ export function ConfigMenu({ open, initial, isUnhinged, onClose, onApply }: Conf
               id === "google" ? "border-emerald-600 bg-emerald-100 text-emerald-800"
                 : id === "custom" ? "border-amber-600 bg-amber-100 text-amber-800"
                   : "border-sky-600 bg-sky-100 text-sky-800"
-            }`}>{id === "moderator" ? "OWN BRAIN" : "ACTIVE"}</span>
+            }`}>{id === "moderator" ? "OWN BRAIN" : id === "house" ? "ACTIVE · FREE" : "ACTIVE"}</span>
           )}
         </div>
         <div className={`text-[9.5px] font-mono mt-0.5 ${isUnhinged ? "text-rose-500" : "text-stone-500"}`}>{subtitle}</div>
@@ -179,6 +193,7 @@ export function ConfigMenu({ open, initial, isUnhinged, onClose, onApply }: Conf
         <div className="mt-4 grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-4">
           {/* Left rail: the provider menu */}
           <div className="space-y-2">
+            {houseAvailable && menuItem("house", "🏠", houseLabel, "Provided by this site's host — free")}
             {menuItem("google", "🛰", "Google AI Studio", "Direct to Gemini — the official channel")}
             {menuItem("custom", "📡", "Custom relay (proxy)", "OpenRouter or any OpenAI-compatible URL")}
             {menuItem("moderator", "⚖", "Moderator & Judge", "The Roundtable's backstage brain")}
@@ -186,7 +201,38 @@ export function ConfigMenu({ open, initial, isUnhinged, onClose, onApply }: Conf
 
           {/* Right pane: the selected section's settings */}
           <div className={`border-[2.5px] ${ink} sketch-border-2 p-3.5 ${isUnhinged ? "bg-[#181011]" : "bg-[#fbf8f0]"}`}>
-            {section === "google" ? (
+            {section === "house" ? (
+              <div className="space-y-3.5">
+                <label className={`flex items-center gap-2 cursor-pointer ${isUnhinged ? "text-rose-200" : "text-stone-800"}`}>
+                  <input
+                    type="radio"
+                    checked={draft.source === "house"}
+                    onChange={() => setDraft({ ...draft, source: "house" })}
+                    className="accent-sky-600 w-3.5 h-3.5"
+                  />
+                  <span className="text-xs font-mono font-bold">Use {houseLabel} as the power source</span>
+                </label>
+                <p className={`text-[10px] font-sans font-medium leading-relaxed ${isUnhinged ? "text-rose-400" : "text-stone-500"}`}>
+                  This site's host pays for the AI — you bring nothing. Transmissions run through the host's own
+                  provider; no key, no setup, free.
+                </p>
+
+                <div>
+                  <label className={label}>Model</label>
+                  <input
+                    type="text"
+                    value={draft.houseModel}
+                    onChange={(e) => setDraft({ ...draft, houseModel: e.target.value })}
+                    placeholder={serverConfig?.defaultProvider.model || "host's default model"}
+                    className={inputCls}
+                  />
+                  <p className={`mt-1 text-[10px] font-mono ${isUnhinged ? "text-rose-500" : "text-stone-500"}`}>
+                    Host's default: <b>{serverConfig?.defaultProvider.model || "unknown"}</b>. Type any model the
+                    host's provider supports, or leave empty to stay on the default.
+                  </p>
+                </div>
+              </div>
+            ) : section === "google" ? (
               <div className="space-y-3.5">
                 <label className={`flex items-center gap-2 cursor-pointer ${isUnhinged ? "text-rose-200" : "text-stone-800"}`}>
                   <input
@@ -212,6 +258,11 @@ export function ConfigMenu({ open, initial, isUnhinged, onClose, onApply }: Conf
                       {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                     </button>
                   </div>
+                  {serverConfig?.serverGemini.active && !draft.googleKey.trim() && (
+                    <p className={`mt-1 text-[10px] font-mono ${isUnhinged ? "text-rose-400" : "text-sky-700"}`}>
+                      🎁 No key? This site's host provides a Gemini key — leave empty for free access.
+                    </p>
+                  )}
                 </div>
 
                 <div>

@@ -18,6 +18,7 @@ class GenerationRequest(BaseModel):
     providerBaseUrl: Optional[str] = None  # BYO OpenAI-compatible endpoint (OpenRouter, etc.)
     selectedModel: Optional[str] = "gemini-3.5-flash"
     houseModel: Optional[str] = None  # visitor-typed model for the HOST's default relay (beats env default)
+    powerSource: Optional[str] = None  # explicit pick: "house" | "server_gemini" | None (legacy priority)
     history: List[ChatMessage] = []
     ragebaitLevel: Optional[float] = 0.5
     responseLength: Optional[str] = "medium"
