@@ -194,7 +194,8 @@ export function ConfigMenu({ open, initial, isUnhinged, serverConfig, onClose, o
           {/* Left rail: the provider menu */}
           <div className="space-y-2">
             {houseAvailable && menuItem("house", "🏠", houseLabel, "Provided by this site's host — free")}
-            {menuItem("google", "🛰", "Google AI Studio", "Direct to Gemini — the official channel")}
+            {menuItem("google", "🛰", serverConfig?.serverGemini.active ? "Google Gemini (free)" : "Google AI Studio",
+              serverConfig?.serverGemini.active ? "On this site's host's Gemini key — just pick a model" : "Direct to Gemini — the official channel")}
             {menuItem("custom", "📡", "Custom relay (proxy)", "OpenRouter or any OpenAI-compatible URL")}
             {menuItem("moderator", "⚖", "Moderator & Judge", "The Roundtable's backstage brain")}
           </div>
@@ -244,26 +245,28 @@ export function ConfigMenu({ open, initial, isUnhinged, serverConfig, onClose, o
                   <span className="text-xs font-mono font-bold">Use Google AI Studio as the power source</span>
                 </label>
 
-                <div>
-                  <label className={label}>API key (optional — falls back to the server's key)</label>
-                  <div className="relative">
-                    <input
-                      type={showKey ? "text" : "password"}
-                      value={draft.googleKey}
-                      onChange={(e) => setDraft({ ...draft, googleKey: e.target.value })}
-                      placeholder="AIzaSy..."
-                      className={`${inputCls} pr-9`}
-                    />
-                    <button type="button" onClick={() => setShowKey(!showKey)} className="absolute right-2.5 top-1/2 -translate-y-1/2 mt-0.5 p-0.5 text-stone-500 hover:text-stone-800 border-0 bg-transparent cursor-pointer" title={showKey ? "Hide key" : "Show key"}>
-                      {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    </button>
+                {serverConfig?.serverGemini.active ? (
+                  // The host funds Gemini — visitors never bring a key here, they only pick a model.
+                  <p className={`text-[10px] font-mono px-2.5 py-2 border-[1.5px] border-dashed rounded-lg ${isUnhinged ? "text-rose-300 border-rose-700" : "text-sky-800 border-sky-500 bg-sky-50"}`}>
+                    🎁 FREE — transmissions run on this site's host's Gemini key. No key needed, just pick a model.
+                  </p>
+                ) : (
+                  <div>
+                    <label className={label}>API key (optional — falls back to the server's key)</label>
+                    <div className="relative">
+                      <input
+                        type={showKey ? "text" : "password"}
+                        value={draft.googleKey}
+                        onChange={(e) => setDraft({ ...draft, googleKey: e.target.value })}
+                        placeholder="AIzaSy..."
+                        className={`${inputCls} pr-9`}
+                      />
+                      <button type="button" onClick={() => setShowKey(!showKey)} className="absolute right-2.5 top-1/2 -translate-y-1/2 mt-0.5 p-0.5 text-stone-500 hover:text-stone-800 border-0 bg-transparent cursor-pointer" title={showKey ? "Hide key" : "Show key"}>
+                        {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
                   </div>
-                  {serverConfig?.serverGemini.active && !draft.googleKey.trim() && (
-                    <p className={`mt-1 text-[10px] font-mono ${isUnhinged ? "text-rose-400" : "text-sky-700"}`}>
-                      🎁 No key? This site's host provides a Gemini key — leave empty for free access.
-                    </p>
-                  )}
-                </div>
+                )}
 
                 <div>
                   <label className={label}>Model</label>

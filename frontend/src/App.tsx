@@ -235,8 +235,10 @@ export default function App() {
 
   // Which brain answers, derived from the visitor's explicit pick.
   const houseMode = providerConfig.source === "house" && Boolean(serverConfig?.defaultProvider.active);
+  // When the host funds Gemini, the Google source ALWAYS runs on the host's key —
+  // visitors never bring one (the key field is hidden in the menu).
   const serverGeminiMode =
-    providerConfig.source === "google" && !customApiKey && Boolean(serverConfig?.serverGemini.active);
+    providerConfig.source === "google" && Boolean(serverConfig?.serverGemini.active);
   const effectiveHouseModel = providerConfig.houseModel.trim() || serverConfig?.defaultProvider.model || "";
   const handleHouseModelChange = (value: string) => {
     setProviderConfig((prev: ProviderConfig) => {
@@ -263,8 +265,12 @@ export default function App() {
     const appliedUrl = isCustom ? config.relayUrl.trim() : "";
     setProviderBaseUrl(appliedUrl);
     localStorage.setItem("jedi_provider_base_url", appliedUrl);
-    // House = the host's key server-side; the client sends none of its own.
-    const appliedKey = isCustom ? config.relayKey : isHouse ? "" : config.googleKey;
+    // House + host-funded Gemini = the host's key server-side; the client sends none.
+    const appliedKey = isCustom
+      ? config.relayKey
+      : isHouse || serverConfig?.serverGemini.active
+        ? ""
+        : config.googleKey;
     setCustomApiKey(appliedKey);
     localStorage.setItem("jedi_custom_api_key", appliedKey);
     const appliedModel = isCustom
