@@ -1,12 +1,12 @@
 # Master Yoda's Holocron — SW Themed AI Chat Hub
 
-<img src="hero-roundtable.png" alt="The Roundtable — a master-admin router hands the floor to three seated AI personas debating around a table" width="640" />
+<img src="code_visuals/hero-roundtable.png" alt="The Roundtable — a master-admin router hands the floor to three seated AI personas debating around a table" width="640" />
 
 A Star Wars–themed LLM playground with two experiences:
 
 1. **Single Chat** — talk to Master Yoda or Darth Ragebaiter across three modes (`roast`, `translate`, `wisdom`), with a Light/Dark ("unhinged") tone switch, TTS, and synthesized SFX.
 
-   <img src="single-chat-personas.png" alt="Master Yoda (light side) and Darth Ragebaiter (dark side), toggled by an unhinged switch" width="440" />
+   <img src="code_visuals/single-chat-personas.png" alt="Master Yoda (light side) and Darth Ragebaiter (dark side), toggled by an unhinged switch" width="440" />
 
 2. **The Roundtable** — seat 3 of 5 personas (Yoda, Ragebaiter, Chancellor Palpaccio, AN-LYT "Anna", Dinn Korr) at a table in **Boardroom** or **Pitch** mode. A master-admin agent on a fast model (`gemini-3.1-flash-lite`) reads each user message and hands the floor to one or several characters; each turn is a structured LLM call that also emits a memory delta, and when the admin judges the debate settled it closes the round with a synthesized decision or verdict. Every character keeps its own persistent knowledge graph (beliefs, relationships, stances) that carries across sessions.
 
@@ -31,7 +31,7 @@ Live demo target: React 19 SPA (Vite) + FastAPI backend, Firebase Auth/Firestore
 
 ### Roundtable pipeline
 
-<img src="roundtable-steps.png" alt="Roundtable flow — Round Start (identify participants and max turns) → Router Decision (pick next speaker and directive) → Round Synthesis (admin delivers final verdict), around a dynamic per-message loop" width="640" />
+<img src="code_visuals/roundtable-steps.png" alt="Roundtable flow — Round Start (identify participants and max turns) → Router Decision (pick next speaker and directive) → Round Synthesis (admin delivers final verdict), around a dynamic per-message loop" width="640" />
 
 Per user message the master admin runs one **Round Start → Router Decision → Round Synthesis** cycle: it identifies the seated participants, hands the floor to 1–3 speakers with a directive each, and — once the debate has settled (≥3 turns) — closes with a synthesized verdict.
 
@@ -48,7 +48,7 @@ Per user message the master admin runs one **Round Start → Router Decision →
 
 ## Tech stack
 
-<img src="tech-stack.png" alt="Tech stack — Frontend: React 19, TypeScript · Backend: FastAPI, Pydantic v2 · LLM: Google Gemini · Persistence: Firebase Auth, Firestore" width="640" />
+<img src="code_visuals/tech-stack-slide.png" alt="Tech stack — Frontend: React 19, TypeScript · Backend: FastAPI, Pydantic v2 · LLM: Google Gemini · Persistence: Firebase Auth, Firestore" width="640" />
 
 <sub>Frontend also uses Vite 6, Tailwind CSS v4, Motion (Framer Motion), lucide-react · Backend uses the `google-genai` SDK, httpx, Uvicorn · Gemini models `gemini-2.5-flash/pro` & `gemini-3.5-flash` by default, with any OpenAI-compatible provider as an alternative · `localStorage` for guest/offline state.</sub>
 
