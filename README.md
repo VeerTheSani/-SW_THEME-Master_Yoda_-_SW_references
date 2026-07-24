@@ -48,7 +48,7 @@ Per user message the master admin runs one **Round Start → Router Decision →
 
 ## Tech stack
 
-<img src="tech-stack.png" alt="Tech stack — Frontend: React 19, TypeScript · Backend: FastAPI, Pydantic v2 · LLM: Google Gemini · Persistence: Firebase Auth, Firestore" width="560" />
+<img src="tech-stack.png" alt="Tech stack — Frontend: React 19, TypeScript · Backend: FastAPI, Pydantic v2 · LLM: Google Gemini · Persistence: Firebase Auth, Firestore" width="640" />
 
 <sub>Frontend also uses Vite 6, Tailwind CSS v4, Motion (Framer Motion), lucide-react · Backend uses the `google-genai` SDK, httpx, Uvicorn · Gemini models `gemini-2.5-flash/pro` & `gemini-3.5-flash` by default, with any OpenAI-compatible provider as an alternative · `localStorage` for guest/offline state.</sub>
 
