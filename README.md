@@ -1,5 +1,7 @@
 # Master Yoda's Holocron — SW Themed AI Chat Hub
 
+<img src="Screenshot%202026-07-24%20164522.png" alt="The Roundtable — a master-admin router hands the floor to seated personas, each with persistent client-side memory" width="480" />
+
 A Star Wars–themed LLM playground with two experiences:
 
 1. **Single Chat** — talk to Master Yoda or Darth Ragebaiter across three modes (`roast`, `translate`, `wisdom`), with a Light/Dark ("unhinged") tone switch, TTS, and synthesized SFX.
@@ -23,6 +25,12 @@ Live demo target: React 19 SPA (Vite) + FastAPI backend, Firebase Auth/Firestore
 
 - The backend is stateless per request — it **never persists** anything. The frontend sends each character's current memory graph on every roundtable call and owns merging/persisting the deltas the backend returns (localStorage for guests, Firestore per-user when signed in).
 - `GEMINI_API_KEY` unset (or left as the placeholder) → both endpoints degrade gracefully to canned offline responses instead of failing, so the app is demoable with zero config.
+
+### Roundtable pipeline
+
+<img src="Screenshot%202026-07-24%20164145.png" alt="Roundtable flow — Round Start (identify participants and max turns) → Router Decision (pick next speaker and directive) → Round Synthesis (admin delivers final verdict), around a dynamic per-message loop" width="480" />
+
+Per user message the master admin runs one **Round Start → Router Decision → Round Synthesis** cycle: it identifies the seated participants, hands the floor to 1–3 speakers with a directive each, and — once the debate has settled (≥3 turns) — closes with a synthesized verdict.
 
 ## Features
 
